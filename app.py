@@ -117,6 +117,27 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 [data-testid="stFileUploaderDropzone"] { background: var(--surface) !important; }
 
 /* Buttons - download */
+/* Game toggle — looks like a dim label */
+button[data-testid="baseButton-secondary"][kind="secondary"]:has(+ *) { display:none; }
+div:has(> button[key="game_toggle"]) button {
+    background: transparent !important;
+    border: none !important;
+    color: #1e1e1e !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 10px !important;
+    padding: 0 !important;
+    width: auto !important;
+    letter-spacing: 0.5px !important;
+    cursor: pointer !important;
+    transition: color 0.2s ease !important;
+    margin-top: 32px !important;
+}
+div:has(> button[key="game_toggle"]) button:hover {
+    color: #333 !important;
+    background: transparent !important;
+    border: none !important;
+}
+
 /* Footer action buttons - tutorial and restart */
 [data-testid="stHorizontalBlock"]:last-of-type .stButton > button {
     background: transparent !important;
@@ -439,6 +460,15 @@ def parse_beagle_xlsx(file, property_name):
 
         filter_str = ', '.join(f for f, _ in filter_sizes)
         has_nonstandard = any(not s for _, s in filter_sizes)
+        filter_count = len(filter_sizes)
+        # Flag high quantity orders
+        _multi_note = ''
+        _multi_flag = False
+        if filter_count >= 4:
+            _multi_flag = True
+            _multi_note = f'{filter_count} filters requested — review before shipping'
+        elif filter_count in (2, 3):
+            _multi_note = f'{filter_count} filters'
 
         output_rows.append({
             'Order #': '', 'Shipping Service': '', 'Height(in)': '',
@@ -446,6 +476,9 @@ def parse_beagle_xlsx(file, property_name):
             'Custom Field 1': filter_str,
             '_nonstandard_filter': has_nonstandard,
             '_po_box': is_po_box(address),
+            '_multi_note': _multi_note,
+            '_multi_flag': _multi_flag,
+            '_filter_count': filter_count,
             'Custom Field 2': property_name,
             'Recipient Name': name,
             'Address': address,
@@ -552,6 +585,10 @@ def get_row_issues(row, dupe_indices):
         issues.append('unusual size')
     if row.get('_po_box'):
         issues.append('PO Box — UPS cannot deliver')
+    if row.get('_multi_flag'):
+        issues.append(f"{row.get('_filter_count',0)} filters — review")
+    elif row.get('_multi_note') and row.get('_filter_count',1) > 1:
+        issues.append(row['_multi_note'])
     return issues
 
 def extract_addresses_from_df(df):
@@ -829,49 +866,7 @@ else:
         file_results = []
         errors = []
 
-        # Show beagle loading screen
-        loading_placeholder = st.empty()
-        loading_placeholder.markdown("""
-        <style>
-        @keyframes dogRun { 0% { left: -70px; } 100% { left: 320px; } }
-        @keyframes wag { 0%,100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
-        @keyframes fadeLabel { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
-        .ls-wrap { position:fixed; inset:0; background:#080808; z-index:99997; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; }
-        .ls-scene { position:relative; width:320px; height:80px; border-bottom: 1px solid #1a1a1a; }
-        .ls-dog { position:absolute; bottom:0; animation: dogRun 2s linear infinite; }
-        .ls-tail { transform-origin: 2px 4px; animation: wag 0.3s ease-in-out infinite; }
-        .ls-stick { position:absolute; bottom:14px; right:30px; width:32px; height:5px; background:#f97316; border-radius:3px; transform:rotate(-25deg); }
-        .ls-label { font-family:'IBM Plex Mono',monospace; font-size:11px; color:#555; text-transform:uppercase; letter-spacing:2px; animation: fadeLabel 1.5s ease-in-out infinite; }
-        </style>
-        <div class='ls-wrap'>
-            <div class='ls-scene'>
-                <div class='ls-stick'></div>
-                <div class='ls-dog'>
-                    <svg width="58" height="52" viewBox="0 0 58 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <ellipse cx="29" cy="34" rx="17" ry="10" fill="#f97316"/>
-                      <ellipse cx="46" cy="24" rx="10" ry="9" fill="#f97316"/>
-                      <ellipse cx="52" cy="17" rx="5" ry="7" fill="#c45c0a" transform="rotate(15 52 17)"/>
-                      <circle cx="49" cy="21" r="2" fill="#080808"/>
-                      <circle cx="50" cy="20" r="0.7" fill="white"/>
-                      <ellipse cx="55" cy="26" rx="2.5" ry="1.5" fill="#1a0a00"/>
-                      <g class="ls-tail"><path d="M13 30 Q3 18 7 10" stroke="#f97316" stroke-width="4" stroke-linecap="round" fill="none"/></g>
-                      <rect x="17" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
-                      <rect x="25" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
-                      <rect x="33" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
-                      <rect x="41" y="40" width="5" height="9" rx="2" fill="#c45c0a"/>
-                    </svg>
-                </div>
-            </div>
-            <div class='ls-label'>Fetching your data...</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        import time
-        time.sleep(0.8)
-
-        loading_placeholder.empty()
-
-        with st.spinner(""):
+        with st.spinner("Processing..."):
             for f in uploaded_files:
                 try:
                     if not f.name.lower().endswith('.xlsx'):
@@ -923,6 +918,16 @@ else:
                 st.markdown(f"<p style='color:#ef4444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(dupes)} duplicate address(es) found — review before shipping.</p>", unsafe_allow_html=True)
             if nonstandard:
                 st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(nonstandard)} non-standard filter size(s) — verify before ordering.</p>", unsafe_allow_html=True)
+
+            flagged_multi = [r for r in all_rows if r.get('_multi_flag')]
+            noted_multi = [r for r in all_rows if r.get('_multi_note') and not r.get('_multi_flag')]
+            if flagged_multi:
+                st.markdown(f"<p style='color:#ef4444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>🚩 {len(flagged_multi)} row(s) requesting 4+ filters — flagged for review.</p>", unsafe_allow_html=True)
+                with st.expander(f"See {len(flagged_multi)} high-quantity row(s)"):
+                    for r in flagged_multi:
+                        st.markdown(f'<div class="excluded-row" style="border-color:#3a1010;">🚩 {r["Recipient Name"]} — {r["Address"]} · <span style="color:#ef4444">{r["_multi_note"]}</span></div>', unsafe_allow_html=True)
+            if noted_multi:
+                st.markdown(f"<p style='color:#555; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>ℹ️ {len(noted_multi)} row(s) with 2–3 filters noted.</p>", unsafe_allow_html=True)
 
             po_boxes = [r for r in all_rows if r.get('_po_box')]
             if po_boxes:
@@ -1020,19 +1025,29 @@ if st.session_state.step >= 2:
         st.markdown("<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:-4px; margin-bottom:16px;'>Anyone shipped in the last 90 days is automatically excluded.</p>", unsafe_allow_html=True)
         st.markdown("<p style='color:#22c55e; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</p>", unsafe_allow_html=True)
 
-        recent_file = st.file_uploader("Upload Recent Shipments", type=["csv", "xlsx"], key="recent")
+        recent_file = st.file_uploader("Upload recent shipments (optional)", type=["csv", "xlsx"], key="recent")
+        st.markdown("<p style='color:#333; font-family:IBM Plex Mono,monospace; font-size:11px; margin-top:-8px; margin-bottom:12px;'>Skip if you don't have access — baseline history will still be applied.</p>", unsafe_allow_html=True)
 
-        if recent_file:
+        run_validation = recent_file is not None
+        if not run_validation:
+            if st.button("Run with baseline only →", key="baseline_only"):
+                run_validation = True
+                st.session_state.baseline_only_mode = True
+            else:
+                st.session_state.baseline_only_mode = False
+
+        if run_validation:
             with st.spinner("Comparing against shipment history..."):
-                # Validate file type
-                if not recent_file.name.lower().endswith(('.csv', '.xlsx')):
-                    st.error("⚠️ Please upload a CSV or xlsx file exported from ShipStation.")
-                else:
-                    shipped = get_baseline_addresses()
+                shipped = get_baseline_addresses()
+                if recent_file and recent_file.name.lower().endswith(('.csv', '.xlsx')):
                     shipped |= get_shipped_addresses(recent_file)
-                    new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
+                elif recent_file:
+                    st.error("⚠️ Please upload a CSV or xlsx file exported from ShipStation.")
+                    run_validation = False
+                new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
-            if recent_file.name.lower().endswith(('.csv', '.xlsx')):
+            if run_validation:
+                mode_note = " (baseline only)" if st.session_state.get("baseline_only_mode") else ""
                 st.markdown("<hr>", unsafe_allow_html=True)
                 cols = st.columns(3)
                 with cols[0]:
@@ -1176,92 +1191,212 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
     st.markdown("<p style='color:#333; font-size:12px; margin-top:8px;'>Upload a charge detail in Step 3 to further filter by paying tenants.</p>", unsafe_allow_html=True)
 
 # ── EASTER EGG GAME ──────────────────────────────────────────────────────
-st.markdown("<p style='color:#1e1e1e; font-family:IBM Plex Mono,monospace; font-size:10px; cursor:default; margin-top:40px; margin-bottom:4px; user-select:none;'>game</p>", unsafe_allow_html=True)
+if 'show_game' not in st.session_state:
+    st.session_state.show_game = False
 
-GAME_HTML = (
-    "<style>"
-    "body{margin:0;background:#0d0d0d;display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;font-family:monospace;}"
-    "#gc{display:block;}"
-    "#gmsg{color:#2a2a2a;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-top:8px;}"
-    "#gsc{color:#2a2a2a;font-size:10px;letter-spacing:1px;position:absolute;top:8px;right:12px;}"
-    "</style>"
-    "<div style='position:relative;display:flex;flex-direction:column;align-items:center;'>"
-    "<div id='gsc'>0</div>"
-    "<canvas id='gc' width='600' height='110'></canvas>"
-    "<div id='gmsg'>press space or tap to start</div>"
-    "</div>"
-    "<script>"
-    "var C=document.getElementById('gc'),ctx=C.getContext('2d'),msg=document.getElementById('gmsg'),sc=document.getElementById('gsc');"
-    "var W=C.width,H=C.height,GR=H-18;"
-    "var state='idle',score=0,hi=0,speed=3.5,frame=0,obstacles=[],bone=null,boneT=180,parts=[];"
-    "var dog={x:60,y:0,vy:0,j:false,lf:0};"
-    "dog.y=GR;"
-    "var G=0.6,JP=-11;"
-    "function reset(){dog={x:60,y:GR,vy:0,j:false,lf:0};obstacles=[];bone=null;boneT=180;score=0;speed=3.5;frame=0;parts=[];state='running';msg.style.color='transparent';}"
-    "function jump(){if(state==='idle'||state==='dead'){reset();return;}if(!dog.j){dog.vy=JP;dog.j=true;}}"
-    "document.addEventListener('keydown',function(e){if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();jump();}});"
-    "C.addEventListener('click',jump);"
-    "function spawnObs(){var h=18+Math.floor(Math.random()*3)*8,w=14+Math.floor(Math.random()*2)*6;obstacles.push({x:W+10,y:GR-h+4,w:w,h:h});}"
-    "function drawDog(x,y,lf,dead){"
-    "ctx.fillStyle='rgba(249,115,22,0.08)';ctx.beginPath();ctx.ellipse(x+4,GR+2,14,3,0,0,Math.PI*2);ctx.fill();"
-    "ctx.save();ctx.translate(x-10,y+2);ctx.rotate(dead?0.3:Math.sin(frame*0.3)*0.4-0.3);"
-    "ctx.strokeStyle='#f97316';ctx.lineWidth=3;ctx.lineCap='round';"
-    "ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(-8,-10,-4,-18);ctx.stroke();ctx.restore();"
-    "ctx.fillStyle='#f97316';ctx.beginPath();ctx.ellipse(x+4,y+6,16,9,dead?0.3:0,0,Math.PI*2);ctx.fill();"
-    "ctx.fillStyle='#f97316';ctx.beginPath();ctx.ellipse(x+19,y-2,10,9,0,0,Math.PI*2);ctx.fill();"
-    "ctx.fillStyle='#c45c0a';ctx.beginPath();ctx.ellipse(x+24,y-9,5,7,0.3,0,Math.PI*2);ctx.fill();"
-    "if(!dead){ctx.fillStyle='#0d0d0d';ctx.beginPath();ctx.arc(x+23,y-3,2,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(x+24,y-4,0.8,0,Math.PI*2);ctx.fill();}"
-    "else{ctx.strokeStyle='#0d0d0d';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x+21,y-5);ctx.lineTo(x+25,y-1);ctx.moveTo(x+25,y-5);ctx.lineTo(x+21,y-1);ctx.stroke();}"
-    "ctx.fillStyle='#1a0000';ctx.beginPath();ctx.ellipse(x+28,y,2.5,1.5,0,0,Math.PI*2);ctx.fill();"
-    "var angs=dead?[0.3,0.3,0.3,0.3]:[Math.sin(lf)*0.5,-Math.sin(lf)*0.5,Math.sin(lf+1)*0.5,-Math.sin(lf+1)*0.5];"
-    "var lx=[x-4,x+2,x+8,x+14];"
-    "angs.forEach(function(a,i){ctx.save();ctx.translate(lx[i],y+12);ctx.rotate(a);ctx.fillStyle='#c45c0a';ctx.beginPath();ctx.roundRect(-2.5,0,5,13,2);ctx.fill();ctx.restore();});}"
-    "function drawPaper(ob){"
-    "var sheets=Math.floor(ob.h/8);"
-    "for(var i=sheets;i>=0;i--){"
-    "var sy=ob.y+i*(ob.h/sheets)-(ob.h/sheets),sl=(i%2===0?1:-1)*1.5;"
-    "ctx.fillStyle=i===0?'#252525':'#1e1e1e';ctx.strokeStyle='#2a2a2a';ctx.lineWidth=0.5;"
-    "ctx.beginPath();ctx.moveTo(ob.x+sl,sy);ctx.lineTo(ob.x+ob.w+sl,sy);ctx.lineTo(ob.x+ob.w-sl,sy+ob.h/sheets+2);ctx.lineTo(ob.x-sl,sy+ob.h/sheets+2);ctx.closePath();ctx.fill();ctx.stroke();"
-    "ctx.strokeStyle='#333';ctx.lineWidth=0.5;"
-    "for(var l=1;l<=2;l++){ctx.beginPath();ctx.moveTo(ob.x+sl+3,sy+l*(ob.h/sheets/3));ctx.lineTo(ob.x+ob.w+sl-3,sy+l*(ob.h/sheets/3));ctx.stroke();}}}"
-    "function drawBone(b){"
-    "ctx.fillStyle='#f97316';ctx.fillRect(b.x-8,b.y-2,16,4);"
-    "[[b.x-8,b.y],[b.x+8,b.y]].forEach(function(p){ctx.beginPath();ctx.arc(p[0],p[1],5,0,Math.PI*2);ctx.fill();});"
-    "ctx.fillStyle='rgba(249,115,22,0.35)';ctx.beginPath();ctx.arc(b.x+3,b.y-5,2,0,Math.PI*2);ctx.fill();}"
-    "function pop(x,y){for(var i=0;i<10;i++){parts.push({x:x,y:y,vx:(Math.random()-0.5)*5,vy:-Math.random()*5-2,life:30,c:Math.random()>0.5?'#f97316':'#c45c0a'});}}"
-    "function hit(ob){return dog.x+26>ob.x+3&&dog.x-6<ob.x+ob.w-3&&dog.y+14>ob.y+3&&dog.y-10<ob.y+ob.h;}"
-    "function loop(){"
-    "ctx.fillStyle='#0d0d0d';ctx.fillRect(0,0,W,H);"
-    "ctx.strokeStyle='#2a2a2a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,GR+4);ctx.lineTo(W,GR+4);ctx.stroke();"
-    "ctx.fillStyle='#1a1a1a';"
-    "for(var i=0;i<W;i+=30){var dx=((i-frame*speed*0.5)%W+W)%W;ctx.beginPath();ctx.arc(dx,GR+8,1,0,Math.PI*2);ctx.fill();}"
-    "if(state==='running'){"
-    "frame++;score++;"
-    "sc.textContent=Math.floor(score/5);sc.style.color='#3a3a3a';"
-    "speed=3.5+score/2000;"
-    "dog.vy+=G;dog.y+=dog.vy;"
-    "if(dog.y>=GR){dog.y=GR;dog.vy=0;dog.j=false;}"
-    "dog.lf+=dog.j?0:0.2;"
-    "if(frame%Math.max(55,90-Math.floor(score/300))===0)spawnObs();"
-    "obstacles=obstacles.filter(function(o){return o.x>-50;});"
-    "obstacles.forEach(function(o){o.x-=speed;drawPaper(o);});"
-    "boneT--;"
-    "if(boneT<=0&&!bone){bone={x:W+20,y:GR-20};boneT=400+Math.random()*400;}"
-    "if(bone){bone.x-=speed;drawBone(bone);"
-    "if(Math.abs(dog.x+10-bone.x)<18&&Math.abs(dog.y-bone.y)<20){pop(bone.x,bone.y);bone=null;score+=100;}"
-    "if(bone&&bone.x<-30)bone=null;}"
-    "parts=parts.filter(function(p){return p.life>0;});"
-    "parts.forEach(function(p){p.x+=p.vx;p.y+=p.vy;p.vy+=0.2;p.life--;ctx.fillStyle=p.c;ctx.globalAlpha=p.life/30;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;});"
-    "if(obstacles.some(hit)){state='dead';var s=Math.floor(score/5);if(s>hi)hi=s;msg.textContent='score '+s+' · best '+hi+' · space to retry';msg.style.color='#3a3a3a';}"
-    "drawDog(dog.x,dog.y,dog.lf,false);"
-    "}else if(state==='dead'){obstacles.forEach(function(o){drawPaper(o);});if(bone)drawBone(bone);drawDog(dog.x,dog.y,dog.lf,true);}"
-    "else{drawDog(dog.x,GR,frame*0.05,false);}"
-    "requestAnimationFrame(loop);}"
-    "loop();"
-    "</script>"
-)
+# Dim "game" toggle label
+if st.button("game", key="game_toggle"):
+    st.session_state.show_game = not st.session_state.show_game
+    st.rerun()
 
-components.html(GAME_HTML, height=170)
+if st.session_state.show_game:
+    GAME_HTML = (
+        "<style>"
+        "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap');"
+        "html,body{margin:0;padding:0;background:#080808;overflow:hidden;}"
+        "#wrap{display:flex;flex-direction:column;align-items:center;padding-top:10px;}"
+        "#gc{display:block;border:1px solid #1a1a1a;border-radius:4px;}"
+        "#hud{display:flex;justify-content:space-between;width:640px;margin-bottom:6px;"
+        "font-family:'IBM Plex Mono',monospace;font-size:11px;color:#2a2a2a;text-transform:uppercase;letter-spacing:1px;}"
+        "#gmsg{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#2a2a2a;letter-spacing:2px;"
+        "text-transform:uppercase;margin-top:8px;min-height:16px;}"
+        "</style>"
+        "<div id='wrap'>"
+        "<div id='hud'><span id='gsc'>score 0</span><span id='ghi'>best 0</span></div>"
+        "<canvas id='gc' width='640' height='130'></canvas>"
+        "<div id='gmsg'>space / tap to start</div>"
+        "</div>"
+        "<script>"
+        # canvas setup
+        "var C=document.getElementById('gc'),ctx=C.getContext('2d');"
+        "var msg=document.getElementById('gmsg'),sc=document.getElementById('gsc'),hi=document.getElementById('ghi');"
+        "var W=C.width,H=C.height,GR=H-22;"
+        "var state='idle',score=0,hiScore=0,speed=4,frame=0,raf=null;"
+        "var obstacles=[],bones=[],parts=[],stars=[];"
+        "var dog={x:70,y:GR,vy:0,j:false,lf:0,invince:0};"
+        "var G=0.55,JP=-12,camX=0;"
+        # init stars
+        "for(var i=0;i<40;i++){stars.push({x:Math.random()*W,y:Math.random()*(GR-20),s:Math.random()*1.5+0.3,b:Math.random()});}"
+        # helpers
+        "function reset(){dog={x:70,y:GR,vy:0,j:false,lf:0,invince:0};obstacles=[];bones=[];parts=[];score=0;speed=4;frame=0;camX=0;state='running';msg.textContent='';}"
+        "function jump(){if(state==='idle'||state==='dead'){reset();return;}if(!dog.j){dog.vy=JP;dog.j=true;spawnJumpParts();}}"
+        "document.addEventListener('keydown',function(e){if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();jump();}});"
+        "C.addEventListener('click',jump);"
+        # spawn jump dust
+        "function spawnJumpParts(){for(var i=0;i<6;i++){parts.push({x:dog.x+10,y:GR+4,vx:(Math.random()-0.7)*3,vy:-Math.random()*2-1,life:20,r:3,c:'#2a2a2a',type:'dust'});}}"
+        # spawn bone collect burst
+        "function spawnBurst(x,y){for(var i=0;i<14;i++){var a=Math.random()*Math.PI*2,sp=Math.random()*5+2;parts.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:35,r:4,c:Math.random()>0.4?'#f97316':'#fff',type:'burst'});}}"
+        # draw dog - improved
+        "function drawDog(x,y,lf,dead,inv){"
+        "if(inv%4<2&&inv>0)return;"  # flicker when invincible
+        # shadow
+        "ctx.save();ctx.globalAlpha=0.15;"
+        "ctx.fillStyle='#f97316';ctx.beginPath();ctx.ellipse(x+12,GR+3,18,4,0,0,Math.PI*2);ctx.fill();"
+        "ctx.restore();"
+        # tail wag
+        "ctx.save();ctx.translate(x-8,y+4);"
+        "var tw=dead?-0.5:Math.sin(frame*(dog.j?0.1:0.35))*0.7-0.2;"
+        "ctx.rotate(tw);"
+        "ctx.strokeStyle='#f97316';ctx.lineWidth=3.5;ctx.lineCap='round';"
+        "ctx.beginPath();ctx.moveTo(0,0);ctx.bezierCurveTo(-6,-8,-12,-14,-8,-22);ctx.stroke();"
+        "ctx.restore();"
+        # body
+        "ctx.fillStyle='#f97316';"
+        "ctx.beginPath();ctx.ellipse(x+10,y+5,17,10,dead?0.25:0,0,Math.PI*2);ctx.fill();"
+        # belly patch
+        "ctx.fillStyle='#ffb366';"
+        "ctx.beginPath();ctx.ellipse(x+12,y+8,8,5,0,0,Math.PI*2);ctx.fill();"
+        # head
+        "ctx.fillStyle='#f97316';"
+        "ctx.beginPath();ctx.ellipse(x+24,y-2,11,10,0,0,Math.PI*2);ctx.fill();"
+        # ear (floppy)
+        "ctx.fillStyle='#c45c0a';"
+        "ctx.beginPath();ctx.ellipse(x+28,y-11,6,9,0.4+Math.sin(frame*0.1)*0.15,0,Math.PI*2);ctx.fill();"
+        # snout
+        "ctx.fillStyle='#e86c10';"
+        "ctx.beginPath();ctx.ellipse(x+34,y,5,4,0,0,Math.PI*2);ctx.fill();"
+        # nose
+        "ctx.fillStyle='#1a0000';"
+        "ctx.beginPath();ctx.ellipse(x+37,y-1,2,1.5,0,0,Math.PI*2);ctx.fill();"
+        # eye
+        "if(!dead){"
+        "ctx.fillStyle='#0d0d0d';ctx.beginPath();ctx.arc(x+28,y-4,2.5,0,Math.PI*2);ctx.fill();"
+        "ctx.fillStyle='white';ctx.beginPath();ctx.arc(x+29,y-5,1,0,Math.PI*2);ctx.fill();"
+        "ctx.fillStyle='#f97316';ctx.beginPath();ctx.arc(x+28,y-4,1,0,Math.PI*2);ctx.fill();"  # orange iris
+        "}else{"
+        "ctx.strokeStyle='#0d0d0d';ctx.lineWidth=2;"
+        "ctx.beginPath();ctx.moveTo(x+26,y-6);ctx.lineTo(x+30,y-2);ctx.moveTo(x+30,y-6);ctx.lineTo(x+26,y-2);ctx.stroke();"
+        "}"
+        # mouth (smile or sad)
+        "ctx.strokeStyle='#c45c0a';ctx.lineWidth=1.5;ctx.lineCap='round';"
+        "if(!dead){ctx.beginPath();ctx.arc(x+34,y+1,3,0.2,Math.PI-0.2);ctx.stroke();}"
+        "else{ctx.beginPath();ctx.arc(x+34,y+4,3,Math.PI+0.2,-0.2);ctx.stroke();}"
+        # legs with running animation
+        "var legPairs=[[x-2,x+6],[x+12,x+20]];"
+        "legPairs.forEach(function(pair,pi){"
+        "pair.forEach(function(lx,li){"
+        "var phase=lf+(pi*Math.PI)+(li*Math.PI);"
+        "var ang=dead?0.3:Math.sin(phase)*0.55;"
+        "ctx.save();ctx.translate(lx+2,y+13);ctx.rotate(ang);"
+        "ctx.fillStyle='#c45c0a';"
+        "ctx.beginPath();ctx.roundRect(-3,0,6,14,3);ctx.fill();"
+        # paw
+        "ctx.fillStyle='#a04008';"
+        "ctx.beginPath();ctx.ellipse(0,14,4,2.5,0,0,Math.PI*2);ctx.fill();"
+        "ctx.restore();});});"
+        "}"
+        # draw paper stack obstacle  
+        "function drawPaper(ob){"
+        "var n=Math.ceil(ob.h/10);"
+        "for(var i=n;i>=0;i--){"
+        "var py=ob.y+i*(ob.h/n),sl=(i%2===0?2:-2),pw=ob.w+(i%3)*2;"
+        "ctx.fillStyle=i===0?'#222':'#191919';"
+        "ctx.strokeStyle='#2a2a2a';ctx.lineWidth=0.8;"
+        "ctx.beginPath();"
+        "ctx.moveTo(ob.x+sl,py);ctx.lineTo(ob.x+pw+sl,py);"
+        "ctx.lineTo(ob.x+pw-sl,py+(ob.h/n)+3);ctx.lineTo(ob.x-sl,py+(ob.h/n)+3);"
+        "ctx.closePath();ctx.fill();ctx.stroke();"
+        # ruled lines on paper
+        "ctx.strokeStyle='#282828';ctx.lineWidth=0.5;"
+        "for(var l=1;l<=3;l++){"
+        "ctx.beginPath();ctx.moveTo(ob.x+sl+4,py+l*(ob.h/n/4));ctx.lineTo(ob.x+pw+sl-4,py+l*(ob.h/n/4));ctx.stroke();"
+        "}"
+        "}"
+        "}"
+        # draw bone
+        "function drawBone(b){"
+        "ctx.save();"
+        "ctx.translate(b.x,b.y);"
+        "ctx.rotate(b.rot||0);"
+        # glow
+        "ctx.shadowColor='#f97316';ctx.shadowBlur=10;"
+        "ctx.fillStyle='#f97316';"
+        "ctx.fillRect(-10,-3,20,6);"
+        "[[−10,0],[10,0]].forEach(function(p){ctx.beginPath();ctx.arc(p[0],p[1],6,0,Math.PI*2);ctx.fill();});"
+        "ctx.shadowBlur=0;"
+        "ctx.restore();"
+        "}"
+        # collision
+        "function hit(ob){return dog.x+28>ob.x+4&&dog.x>ob.x-20&&dog.y+12>ob.y+4&&dog.y-8<ob.y+ob.h;}"
+        "function hitBone(b){return Math.abs((dog.x+18)-b.x)<20&&Math.abs(dog.y-b.y)<22;}"
+        # main loop
+        "function loop(){"
+        "ctx.fillStyle='#080808';ctx.fillRect(0,0,W,H);"
+        # stars
+        "stars.forEach(function(s){"
+        "s.b+=0.015;var a=0.15+Math.abs(Math.sin(s.b))*0.25;"
+        "ctx.fillStyle='rgba(255,255,255,'+a+')';ctx.beginPath();ctx.arc(s.x,s.y,s.s,0,Math.PI*2);ctx.fill();"
+        "});"
+        # ground with subtle gradient
+        "var grd=ctx.createLinearGradient(0,GR,0,H);"
+        "grd.addColorStop(0,'#1a1a1a');grd.addColorStop(1,'#0d0d0d');"
+        "ctx.fillStyle=grd;ctx.fillRect(0,GR+4,W,H-GR);"
+        "ctx.strokeStyle='#2a2a2a';ctx.lineWidth=1;"
+        "ctx.beginPath();ctx.moveTo(0,GR+4);ctx.lineTo(W,GR+4);ctx.stroke();"
+        # scrolling ground dots
+        "ctx.fillStyle='#1e1e1e';"
+        "for(var i=0;i<W;i+=24){var dx=((i-(frame*speed*0.4))%W+W)%W;ctx.beginPath();ctx.arc(dx,GR+10,1.2,0,Math.PI*2);ctx.fill();}"
+        "if(state==='running'){"
+        "frame++;score++;"
+        "sc.textContent='score '+Math.floor(score/5);"
+        "speed=4+score/1800;"
+        # physics
+        "dog.vy+=G;dog.y+=dog.vy;"
+        "if(dog.y>=GR){dog.y=GR;dog.vy=0;dog.j=false;}"
+        "dog.lf+=dog.j?0:0.22;"
+        "if(dog.invince>0)dog.invince--;"
+        # spawn obstacles
+        "if(frame%Math.max(48,80-Math.floor(score/400))===0){"
+        "var h=16+Math.floor(Math.random()*4)*9,w=12+Math.floor(Math.random()*3)*5;"
+        "obstacles.push({x:W+10,y:GR-h+4,w:w,h:h});}"
+        # spawn bones periodically
+        "if(frame%220===150){bones.push({x:W+20,y:GR-28-Math.random()*20,rot:0});}"
+        "obstacles=obstacles.filter(function(o){return o.x>-60;});"
+        "bones=bones.filter(function(b){return b.x>-40;});"
+        # update + draw obstacles
+        "obstacles.forEach(function(o){o.x-=speed;drawPaper(o);});"
+        # update + draw bones
+        "bones.forEach(function(b){b.x-=speed*0.85;b.rot+=0.04;drawBone(b);});"
+        # collect bones
+        "bones=bones.filter(function(b){if(hitBone(b)){spawnBurst(b.x,b.y);score+=250;return false;}return true;});"
+        # particles
+        "parts=parts.filter(function(p){return p.life>0;});"
+        "parts.forEach(function(p){"
+        "p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;"
+        "ctx.globalAlpha=p.life/35;"
+        "ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,p.r*(p.life/35),0,Math.PI*2);ctx.fill();"
+        "ctx.globalAlpha=1;});"
+        # collision check
+        "if(dog.invince===0&&obstacles.some(hit)){"
+        "state='dead';var s=Math.floor(score/5);if(s>hiScore){hiScore=s;hi.textContent='best '+hiScore;}"
+        "msg.textContent='score '+s+' · space to retry';"
+        "for(var i=0;i<20;i++){var a=Math.random()*Math.PI*2,sp=Math.random()*6+2;parts.push({x:dog.x+18,y:dog.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:40,r:5,c:Math.random()>0.5?'#f97316':'#c45c0a',type:'death'});}"
+        "}"
+        "drawDog(dog.x,dog.y,dog.lf,false,dog.invince);"
+        "}else if(state==='dead'){"
+        "obstacles.forEach(function(o){drawPaper(o);});"
+        "bones.forEach(function(b){drawBone(b);});"
+        "parts=parts.filter(function(p){return p.life>0;});"
+        "parts.forEach(function(p){p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;ctx.globalAlpha=p.life/40;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;});"
+        "drawDog(dog.x,dog.y,dog.lf,true,0);"
+        "}else{"  # idle
+        "drawDog(dog.x,GR,frame*0.04,false,0);"
+        "}"
+        "requestAnimationFrame(loop);}"
+        "loop();"
+        "</script>"
+    )
+    components.html(GAME_HTML, height=210)
 
 # ── FOOTER ──────────────────────────────────────────────────────────────
 master_count = len(st.session_state.get('master_rows', []))
