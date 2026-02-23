@@ -232,17 +232,75 @@ hr { border-color: var(--border) !important; margin: 24px 0 !important; }
 # --- Core logic ---
 
 STANDARD_FILTER_PATTERN = re.compile(r'^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?$', re.IGNORECASE)
+PO_BOX_PATTERN = re.compile(r'(p\.?\s*o\.?\s*box|post\s+office\s+box)', re.IGNORECASE)
+# Filter dash notation: 16x25x1-3 means qty 3 of 16x25x1
+FILTER_DASH_QTY_PATTERN = re.compile(r'^(.+?)-(\d+)$')
 
 def normalize_filter_size(s):
-    """Normalize filter size to NxNxN format. Returns (normalized, is_standard)."""
+    """Normalize filter size to NxNxN format. Returns (normalized, is_standard, qty_from_dash)."""
     if not s:
-        return None, False
+        return None, False, 1
     s = str(s).strip()
+    # Check for dash-quantity notation: 16x25x1-3
+    qty_from_dash = 1
+    dash_match = FILTER_DASH_QTY_PATTERN.match(s)
+    if dash_match:
+        potential_size = dash_match.group(1).strip()
+        potential_qty = int(dash_match.group(2))
+        # Only treat as qty if the base looks like a filter size
+        if re.search(r'[xX×]', potential_size):
+            s = potential_size
+            qty_from_dash = potential_qty
     s = re.sub(r'\s*[×x]\s*', 'x', s, flags=re.IGNORECASE)
     s = s.rstrip('.')
     s = s.strip()
     is_standard = bool(STANDARD_FILTER_PATTERN.match(s))
-    return s, is_standard
+    return s, is_standard, qty_from_dash
+
+def normalize_zip(zipcode):
+    """Normalize zip code — fix leading zeros, strip 9-digit extension."""
+    if not zipcode:
+        return ''
+    z = str(zipcode).strip()
+    # Remove .0 from Excel numeric conversion
+    if z.endswith('.0'):
+        z = z[:-2]
+    # Strip 9-digit extension (78701-1234 -> 78701)
+    z = z.split('-')[0].strip()
+    # Pad leading zeros to 5 digits
+    if z.isdigit() and len(z) < 5:
+        z = z.zfill(5)
+    return z
+
+def is_po_box(address):
+    """Return True if address appears to be a PO Box."""
+    return bool(PO_BOX_PATTERN.search(str(address)))
+
+# Fuzzy column name mapping — handles Beagle format variations
+COLUMN_ALIASES = {
+    'First Name': ['first name', 'firstname', 'first', 'fname', 'given name'],
+    'Last Name': ['last name', 'lastname', 'last', 'lname', 'surname', 'family name'],
+    'Email': ['email', 'email address', 'e-mail', 'tenant email', 'resident email'],
+    'Street Address': ['street address', 'address', 'street', 'address 1', 'addr', 'property address'],
+    'UNIT': ['unit', 'apt', 'apartment', 'suite', 'unit #', 'apt #', 'unit number'],
+    'City': ['city', 'town', 'municipality'],
+    'State': ['state', 'st', 'province'],
+    'Zip Code': ['zip code', 'zip', 'postal code', 'zipcode', 'post code'],
+    'Filter Size': ['filter size', 'filter', 'size', 'filter dimensions', 'air filter size'],
+    'Quantity': ['quantity', 'qty', 'count', 'amount', 'number'],
+}
+
+def fuzzy_col_idx(headers, canonical_name):
+    """Find column index using fuzzy matching against known aliases."""
+    aliases = COLUMN_ALIASES.get(canonical_name, [canonical_name.lower()])
+    for i, h in enumerate(headers):
+        if h and str(h).strip().lower() in aliases:
+            return i
+    # Fallback: partial match
+    for i, h in enumerate(headers):
+        if h and canonical_name.lower() in str(h).strip().lower():
+            return i
+    return None
 
 def merge_address(street, unit):
     street = str(street).strip() if street else ''
@@ -303,22 +361,26 @@ def parse_beagle_xlsx(file, property_name):
     rows = list(ws.iter_rows(values_only=True))
     headers = rows[0]
 
-    def col_idx(name):
-        for i, h in enumerate(headers):
-            if h and str(h).strip().lower() == name.lower():
-                return i
-        return None
-
-    first_name_col = col_idx('First Name')
-    last_name_col = col_idx('Last Name')
-    email_col = col_idx('Email')
-    street_col = col_idx('Street Address')
-    unit_col = col_idx('UNIT')
-    city_col = col_idx('City')
-    state_col = col_idx('State')
-    zip_col = col_idx('Zip Code')
-    filter_size_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() == 'filter size']
-    qty_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() == 'quantity']
+    first_name_col = fuzzy_col_idx(headers, 'First Name')
+    last_name_col = fuzzy_col_idx(headers, 'Last Name')
+    email_col = fuzzy_col_idx(headers, 'Email')
+    street_col = fuzzy_col_idx(headers, 'Street Address')
+    unit_col = fuzzy_col_idx(headers, 'UNIT')
+    city_col = fuzzy_col_idx(headers, 'City')
+    state_col = fuzzy_col_idx(headers, 'State')
+    zip_col = fuzzy_col_idx(headers, 'Zip Code')
+    filter_size_aliases = COLUMN_ALIASES['Filter Size']
+    qty_aliases = COLUMN_ALIASES['Quantity']
+    filter_size_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() in filter_size_aliases]
+    qty_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() in qty_aliases]
+    
+    # Warn if critical columns missing
+    missing_cols = []
+    if first_name_col is None and last_name_col is None: missing_cols.append('Name')
+    if street_col is None: missing_cols.append('Street Address')
+    if zip_col is None: missing_cols.append('Zip Code')
+    if missing_cols:
+        raise ValueError(f"Could not find required columns: {', '.join(missing_cols)}. Headers found: {[h for h in headers if h]}")
 
     output_rows = []
     for row in rows[1:]:
@@ -331,20 +393,20 @@ def parse_beagle_xlsx(file, property_name):
         address = merge_address(row[street_col], row[unit_col])
         city = str(row[city_col]).strip() if row[city_col] else ''
         state = str(row[state_col]).strip() if row[state_col] else ''
-        zipcode = str(row[zip_col]).strip() if row[zip_col] else ''
-        if zipcode.endswith('.0'):
-            zipcode = zipcode[:-2]
+        zipcode = normalize_zip(row[zip_col] if zip_col is not None else '')
 
         filter_sizes = []
         for i, fs_col in enumerate(filter_size_cols):
             fs = row[fs_col]
             qty_val = row[qty_cols[i]] if i < len(qty_cols) else 1
             if fs:
-                normalized, is_std = normalize_filter_size(fs)
+                normalized, is_std, dash_qty = normalize_filter_size(fs)
                 try:
                     qty = int(float(str(qty_val))) if qty_val else 1
                 except (ValueError, TypeError):
                     qty = 1
+                # dash notation overrides qty column
+                qty = max(qty, dash_qty)
                 for _ in range(qty):
                     filter_sizes.append((normalized, is_std))
 
@@ -359,6 +421,7 @@ def parse_beagle_xlsx(file, property_name):
             'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
             'Custom Field 1': filter_str,
             '_nonstandard_filter': has_nonstandard,
+            '_po_box': is_po_box(address),
             'Custom Field 2': property_name,
             'Recipient Name': name,
             'Address': address,
@@ -463,6 +526,8 @@ def get_row_issues(row, dupe_indices):
         issues.append('no email')
     if row.get('_nonstandard_filter'):
         issues.append('unusual size')
+    if row.get('_po_box'):
+        issues.append('PO Box — UPS cannot deliver')
     return issues
 
 def extract_addresses_from_df(df):
@@ -526,6 +591,8 @@ if 'step1_stats' not in st.session_state:
     st.session_state.step1_stats = None
 if 'step2_stats' not in st.session_state:
     st.session_state.step2_stats = None
+if 'tutorial_step' not in st.session_state:
+    st.session_state.tutorial_step = 0  # 0 = not shown
 
 
 # --- Header ---
@@ -535,6 +602,72 @@ st.markdown(f"""
     <span class='navbar-right'>AIR FILTER FULFILLMENT</span>
 </div>
 """, unsafe_allow_html=True)
+
+# ── TUTORIAL ─────────────────────────────────────────────────────────────
+
+TUTORIAL_STEPS = [
+    {
+        "title": "Welcome to Filter Tools",
+        "body": "This tool converts Beagle property reports into ShipStation-ready CSVs — with smart validation built in.<br><br>It walks you through <strong>3 steps</strong>: Convert &rarr; Validate Shipments &rarr; Validate Charges.<br><br>You can download your CSV at any step if you want to skip ahead.",
+    },
+    {
+        "title": "Step 1 — Convert Report",
+        "body": "Upload one or more <strong>Beagle xlsx files</strong>.<br><br>The tool will automatically detect the property name from the filename. If it cannot find it, it will ask you to type it in.<br><br>After upload you will see stats, warnings, and a row preview. Use the <strong>Issues Only</strong> toggle to quickly spot rows that need attention.",
+    },
+    {
+        "title": "Step 2 — Validate Shipments",
+        "body": "Upload a <strong>recent ShipStation export</strong> (CSV or xlsx).<br><br>Anyone already shipped in the past 90 days is automatically excluded — the baseline history back to early 2024 is already loaded.<br><br>You will see exactly how many rows were excluded and why.",
+    },
+    {
+        "title": "Step 3 — Validate Charges",
+        "body": "Upload a <strong>charge detail report</strong> to confirm only paying tenants are included.<br><br>Rows not found in the charge detail are <strong>flagged for review</strong> — not silently dropped. You can download the flagged list separately.<br><br>This step is optional — you can skip and download at any point.",
+    },
+    {
+        "title": "A few things to know",
+        "body": "<strong>Restart</strong> in the sidebar wipes the session completely.<br><br><strong>Edit buttons</strong> on completed steps let you go back without losing your data.<br><br><strong>Master CSV</strong> accumulates rows across multiple property uploads in the same session — grab it at the end for a combined ShipStation import.<br><br>You are all set — go ahead and upload your first file.",
+    },
+]
+
+# Render tutorial overlay if active
+t_step = st.session_state.get('tutorial_step', 0)
+if 1 <= t_step <= len(TUTORIAL_STEPS):
+    slide = TUTORIAL_STEPS[t_step - 1]
+    dots_html = "".join(
+        f'<div class="tutorial-dot {"active" if i+1 == t_step else "done" if i+1 < t_step else ""}"></div>'
+        for i in range(len(TUTORIAL_STEPS))
+    )
+    body_formatted = slide["body"]
+    st.markdown(f"""
+    <div class="tutorial-overlay"></div>
+    <div class="tutorial-card">
+        <div class="tutorial-step-num">Step {t_step} of {len(TUTORIAL_STEPS)}</div>
+        <div class="tutorial-title">{slide["title"]}</div>
+        <div class="tutorial-body">{body_formatted}</div>
+        <div class="tutorial-dots">{dots_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    t_col1, t_col2, t_col3 = st.columns([1, 1, 1])
+    with t_col1:
+        if t_step > 1:
+            if st.button("← Back", key="tut_back"):
+                st.session_state.tutorial_step -= 1
+                st.rerun()
+    with t_col2:
+        if st.button("Skip Tutorial", key="tut_skip"):
+            st.session_state.tutorial_step = 0
+            st.rerun()
+    with t_col3:
+        if t_step < len(TUTORIAL_STEPS):
+            if st.button("Next →", key="tut_next"):
+                st.session_state.tutorial_step += 1
+                st.rerun()
+        else:
+            if st.button("Let's go →", key="tut_done"):
+                st.session_state.tutorial_step = 0
+                st.rerun()
+
+# ── SIDEBAR ───────────────────────────────────────────────────────────────
 
 # Start Over in sidebar — completely out of main flow
 with st.sidebar:
@@ -550,6 +683,10 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
     st.markdown("<p style='color:#333; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px;'>Session</p>", unsafe_allow_html=True)
+    if st.button("? Tutorial", key="show_tutorial"):
+        st.session_state.tutorial_step = 1
+        st.rerun()
+    st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
     if st.button("↺ Restart", key="start_over"):
         for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
             if key in st.session_state:
@@ -697,6 +834,10 @@ else:
                 st.markdown(f"<p style='color:#ef4444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(dupes)} duplicate address(es) found — review before shipping.</p>", unsafe_allow_html=True)
             if nonstandard:
                 st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(nonstandard)} non-standard filter size(s) — verify before ordering.</p>", unsafe_allow_html=True)
+
+            po_boxes = [r for r in all_rows if r.get('_po_box')]
+            if po_boxes:
+                st.markdown(f"<p style='color:#ef4444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>🚫 {len(po_boxes)} PO Box address(es) detected — UPS cannot deliver to these. They will be flagged in the preview.</p>", unsafe_allow_html=True)
 
             if len(file_results) > 1:
                 for fname, count in file_results:
