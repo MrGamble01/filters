@@ -574,6 +574,132 @@ def get_geographic_breakdown(rows):
     from collections import Counter
     return Counter(r.get('State','').strip().upper() for r in rows if r.get('State','').strip())
 
+def is_date_header(val):
+    """Detect rows like 'Jan 16', 'Feb 9' that are date headers."""
+    if not val:
+        return False
+    return bool(re.match(r'^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+$', str(val).strip(), re.IGNORECASE))
+
+FILTER_SIZE_PATTERN = re.compile(r'\d+(\.\d+)?\s*[x×]\s*\d+(\.\d+)?\s*[x×]\s*\d+(\.\d+)?', re.IGNORECASE)
+QTY_IN_PARENS = re.compile(r'\((\d+)\)\s*(.+?)(?:,|$)')
+TRAILING_QTY = re.compile(r'^(.+?)\s*\((\d+)\)\s*$')
+
+def parse_issues_csv_notes(notes_str):
+    """Extract filter sizes and qty from notes field. Returns list of (size, qty) tuples."""
+    if not notes_str or not notes_str.strip():
+        return []
+    notes_str = notes_str.strip()
+    results = []
+    # Format: (1) 16x20x1,(1) 15x20x1
+    if QTY_IN_PARENS.search(notes_str):
+        for m in QTY_IN_PARENS.finditer(notes_str):
+            qty, size = int(m.group(1)), m.group(2).strip()
+            if FILTER_SIZE_PATTERN.search(size):
+                s, _, dq = normalize_filter_size(size)
+                results.append((s, qty))
+        if results:
+            return results
+    # Format: 20x25x1 (4)
+    trailing = TRAILING_QTY.match(notes_str)
+    if trailing:
+        size, qty = trailing.group(1).strip(), int(trailing.group(2))
+        if FILTER_SIZE_PATTERN.search(size):
+            s, _, _ = normalize_filter_size(size)
+            return [(s, qty)]
+    # Plain: 16x20x1
+    if FILTER_SIZE_PATTERN.search(notes_str):
+        s, _, _ = normalize_filter_size(notes_str.strip())
+        return [(s, 1)]
+    return []
+
+def parse_address_field(addr_str):
+    """Split a full address string into street, city, state, zip."""
+    if not addr_str:
+        return '', '', '', ''
+    addr_str = str(addr_str).strip()
+    # Strip "Address: " prefix
+    addr_str = re.sub(r'^Address:\s*', '', addr_str, flags=re.IGNORECASE)
+    # Try pattern: street, city, ST zip or street, city, ST
+    m = re.match(r'^(.+?),\s*([^,]+?),?\s*([A-Z]{2}),?\s*(\d{5}(?:-\d{4})?)?$', addr_str.strip(), re.IGNORECASE)
+    if m:
+        return m.group(1).strip(), m.group(2).strip(), m.group(3).strip().upper(), normalize_zip(m.group(4) or '')
+    # Try: street city ST zip (no commas)
+    m2 = re.search(r'^(.*?)\s+([A-Za-z\s]+?)\s+([A-Z]{2})\s+(\d{5})$', addr_str.strip())
+    if m2:
+        return m2.group(1).strip(), m2.group(2).strip(), m2.group(3).upper(), m2.group(4)
+    # Just street, no city/state
+    return addr_str.strip(), '', '', ''
+
+def parse_issues_csv(file, property_override=None):
+    """Parse the issues/exceptions CSV format into normalized rows."""
+    import csv, io
+    raw = file.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except Exception:
+        text = raw.decode('latin-1')
+    reader = csv.reader(io.StringIO(text))
+    rows_out = []
+    for row in reader:
+        if len(row) < 2:
+            continue
+        addr_raw = row[0].strip() if row[0] else ''
+        pm_company = row[1].strip() if len(row) > 1 else ''
+        notes = row[2].strip() if len(row) > 2 else ''
+        tracking = row[3].strip() if len(row) > 3 else ''
+        # Skip header row, date headers, empty rows
+        if not addr_raw or addr_raw.lower() == 'property address':
+            continue
+        if is_date_header(addr_raw):
+            continue
+        # Parse address
+        street, city, state, zipcode = parse_address_field(addr_raw)
+        if not street:
+            continue
+        # Parse filter sizes from notes
+        filter_pairs = parse_issues_csv_notes(notes)
+        filter_sizes_list = []
+        for size, qty in filter_pairs:
+            for _ in range(qty):
+                s, is_std, _ = normalize_filter_size(size)
+                filter_sizes_list.append((s, is_std))
+        filter_str = ', '.join(f for f, _ in filter_sizes_list) if filter_sizes_list else ''
+        has_nonstandard = any(not s for _, s in filter_sizes_list)
+        filter_count = len(filter_sizes_list)
+        # Multi-filter flags
+        _multi_note = ''
+        _multi_flag = False
+        if filter_count >= 4:
+            _multi_flag = True
+            _multi_note = f'{filter_count} filters requested — review before shipping'
+        elif filter_count in (2, 3):
+            _multi_note = f'{filter_count} filters'
+        # Notes that aren't filter sizes = issue note
+        is_filter_note = bool(filter_pairs)
+        issue_note = notes if not is_filter_note and notes else ''
+        property_name = property_override or pm_company or 'Unknown'
+        rows_out.append({
+            'Order #': '', 'Shipping Service': '', 'Height(in)': '',
+            'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
+            'Custom Field 1': filter_str,
+            'Custom Field 2': pm_company,
+            'Recipient Name': street,  # no name field — use address as identifier
+            'Address': street,
+            'City': city,
+            'State': state,
+            'Postal Code': zipcode,
+            'Country Code': 'US',
+            'Tenant Email': '',
+            '_nonstandard_filter': has_nonstandard,
+            '_po_box': is_po_box(street),
+            '_multi_note': _multi_note,
+            '_multi_flag': _multi_flag,
+            '_filter_count': filter_count,
+            '_issue_note': issue_note,
+            '_tracking': tracking,
+        })
+    return rows_out
+
 def get_row_issues(row, dupe_indices):
     """Return list of issue strings for a single row."""
     issues = []
@@ -818,7 +944,7 @@ if step1_done:
 else:
     st.markdown('<div class="step-badge active">Step 1 — Convert Report</div>', unsafe_allow_html=True)
 
-    uploaded_files = st.file_uploader("Upload Beagle xlsx", type=["xlsx"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Beagle xlsx or Issues CSV", type=["xlsx", "csv"], accept_multiple_files=True)
 
     file_property_map = {}
     all_confirmed = False
@@ -869,14 +995,20 @@ else:
         with st.spinner("Processing..."):
             for f in uploaded_files:
                 try:
-                    if not f.name.lower().endswith('.xlsx'):
-                        errors.append((f.name, "File must be a .xlsx Excel file"))
+                    if not f.name.lower().endswith(('.xlsx', '.csv')):
+                        errors.append((f.name, "File must be a Beagle .xlsx or issues .csv file"))
                         continue
                     file_prop = file_property_map.get(f.name, property_name)
-                    rows = parse_beagle_xlsx(f, file_prop)
-                    if not rows:
-                        errors.append((f.name, "No valid rows found — check the file format matches the Beagle report template"))
-                        continue
+                    if f.name.lower().endswith('.csv'):
+                        rows = parse_issues_csv(f, property_override=file_prop if file_prop else None)
+                        if not rows:
+                            errors.append((f.name, "No valid rows found — check the CSV matches the issues/exceptions format"))
+                            continue
+                    else:
+                        rows = parse_beagle_xlsx(f, file_prop)
+                        if not rows:
+                            errors.append((f.name, "No valid rows found — check the file format matches the Beagle report template"))
+                            continue
                     all_rows.extend(rows)
                     file_results.append((f.name, len(rows)))
                 except Exception as e:
@@ -948,7 +1080,7 @@ else:
                         row_issues.append('duplicate')
                     if show_issues and not row_issues:
                         continue
-                    preview_rows.append({
+                    row_entry = {
                         'Status': '⚠' if row_issues else '✓',
                         'Name': r['Recipient Name'],
                         'Address': r['Address'],
@@ -957,7 +1089,12 @@ else:
                         'Filter': r['Custom Field 1'] or '—',
                         'Email': '✓' if r.get('Tenant Email','').strip() else '✗',
                         'Issues': ', '.join(row_issues) if row_issues else '',
-                    })
+                    }
+                    if r.get('_issue_note'):
+                        row_entry['Note'] = r['_issue_note']
+                    if r.get('_tracking'):
+                        row_entry['Tracking'] = r['_tracking']
+                    preview_rows.append(row_entry)
                 if preview_rows:
                     st.dataframe(preview_rows, use_container_width=True, hide_index=True)
                 else:
