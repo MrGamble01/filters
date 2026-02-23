@@ -225,74 +225,24 @@ hr { border-color: var(--border) !important; margin: 24px 0 !important; }
     letter-spacing: 0.8px;
 }
 
-/* File / excluded rows */
-.file-row, .excluded-row {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    padding: 9px 14px;
-    margin-bottom: 5px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
-}
-
-/* Fixed navbar */
-.navbar {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 9999;
-    background: rgba(8,8,8,0.92);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
-    padding: 0 32px;
-    height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.navbar-right {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 0.5px;
-}
-
-/* Fixed footer */
-.site-footer {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    z-index: 9999;
-    background: rgba(8,8,8,0.92);
-    backdrop-filter: blur(12px);
-    border-top: 1px solid var(--border);
-    padding: 0 32px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.site-footer span {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-}
-.site-footer .author {
-    color: var(--orange);
-}
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- Core logic ---
 
+STANDARD_FILTER_PATTERN = re.compile(r'^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?$', re.IGNORECASE)
+
 def normalize_filter_size(s):
+    """Normalize filter size to NxNxN format. Returns (normalized, is_standard)."""
     if not s:
-        return None
+        return None, False
     s = str(s).strip()
     s = re.sub(r'\s*[×x]\s*', 'x', s, flags=re.IGNORECASE)
     s = s.rstrip('.')
-    return s.strip()
+    s = s.strip()
+    is_standard = bool(STANDARD_FILTER_PATTERN.match(s))
+    return s, is_standard
 
 def merge_address(street, unit):
     street = str(street).strip() if street else ''
@@ -390,21 +340,25 @@ def parse_beagle_xlsx(file, property_name):
             fs = row[fs_col]
             qty_val = row[qty_cols[i]] if i < len(qty_cols) else 1
             if fs:
-                normalized = normalize_filter_size(fs)
+                normalized, is_std = normalize_filter_size(fs)
                 try:
                     qty = int(float(str(qty_val))) if qty_val else 1
                 except (ValueError, TypeError):
                     qty = 1
                 for _ in range(qty):
-                    filter_sizes.append(normalized)
+                    filter_sizes.append((normalized, is_std))
 
         if not filter_sizes:
             continue
 
+        filter_str = ', '.join(f for f, _ in filter_sizes)
+        has_nonstandard = any(not s for _, s in filter_sizes)
+
         output_rows.append({
             'Order #': '', 'Shipping Service': '', 'Height(in)': '',
             'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
-            'Custom Field 1': ', '.join(filter_sizes),
+            'Custom Field 1': filter_str,
+            '_nonstandard_filter': has_nonstandard,
             'Custom Field 2': property_name,
             'Recipient Name': name,
             'Address': address,
@@ -417,17 +371,99 @@ def parse_beagle_xlsx(file, property_name):
 
     return output_rows
 
+OUTPUT_FIELDNAMES = [
+    'Order #', 'Shipping Service', 'Height(in)', 'Length(in)', 'Width(in)',
+    'Weight(oz)', 'Custom Field 1', 'Custom Field 2', 'Recipient Name',
+    'Address', 'City', 'State', 'Postal Code', 'Country Code', 'Tenant Email'
+]
+
 def rows_to_csv_bytes(rows):
-    fieldnames = [
-        'Order #', 'Shipping Service', 'Height(in)', 'Length(in)', 'Width(in)',
-        'Weight(oz)', 'Custom Field 1', 'Custom Field 2', 'Recipient Name',
-        'Address', 'City', 'State', 'Postal Code', 'Country Code', 'Tenant Email'
-    ]
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer = csv.DictWriter(buf, fieldnames=OUTPUT_FIELDNAMES, extrasaction='ignore')
     writer.writeheader()
     writer.writerows(rows)
     return buf.getvalue().encode('utf-8')
+
+def detect_duplicates(rows):
+    """Find rows with the same normalized address within the same upload."""
+    seen = {}
+    dupes = []
+    for i, row in enumerate(rows):
+        key = normalize_address_key(row['Address'])
+        if key in seen:
+            dupes.append((seen[key], i, row))
+        else:
+            seen[key] = i
+    return dupes
+
+def get_filter_size_breakdown(rows):
+    """Return dict of filter_size -> count."""
+    from collections import Counter
+    sizes = []
+    for row in rows:
+        fs = row.get('Custom Field 1', '')
+        for s in fs.split(','):
+            s = s.strip()
+            if s:
+                sizes.append(s)
+    return Counter(sizes)
+
+def compute_quality_score(rows):
+    """0-100 score grading overall data quality."""
+    if not rows:
+        return 0, []
+    total = len(rows)
+    issues = []
+    score = 100
+
+    # Filter coverage (worth 40 pts)
+    missing_filter = sum(1 for r in rows if not r.get('Custom Field 1','').strip())
+    if missing_filter:
+        pct = missing_filter / total
+        deduction = int(pct * 40)
+        score -= deduction
+        issues.append(('filter', missing_filter, f"{missing_filter} missing filter size"))
+
+    # Email coverage (worth 20 pts)
+    missing_email = sum(1 for r in rows if not r.get('Tenant Email','').strip())
+    if missing_email:
+        pct = missing_email / total
+        deduction = int(pct * 20)
+        score -= deduction
+        issues.append(('email', missing_email, f"{missing_email} missing email"))
+
+    # Duplicate addresses (worth 20 pts)
+    dupes = detect_duplicates(rows)
+    if dupes:
+        deduction = min(20, len(dupes) * 5)
+        score -= deduction
+        issues.append(('dupe', len(dupes), f"{len(dupes)} duplicate address{'es' if len(dupes) > 1 else ''}"))
+
+    # Non-standard filter sizes (worth 20 pts)
+    nonstandard = sum(1 for r in rows if r.get('_nonstandard_filter'))
+    if nonstandard:
+        pct = nonstandard / total
+        deduction = int(pct * 20)
+        score -= deduction
+        issues.append(('nonstandard', nonstandard, f"{nonstandard} non-standard filter size{'s' if nonstandard > 1 else ''}"))
+
+    return max(0, score), issues
+
+def get_geographic_breakdown(rows):
+    """Return state -> count dict."""
+    from collections import Counter
+    return Counter(r.get('State','').strip().upper() for r in rows if r.get('State','').strip())
+
+def get_row_issues(row, dupe_indices):
+    """Return list of issue strings for a single row."""
+    issues = []
+    if not row.get('Custom Field 1','').strip():
+        issues.append('missing filter')
+    if not row.get('Tenant Email','').strip():
+        issues.append('no email')
+    if row.get('_nonstandard_filter'):
+        issues.append('unusual size')
+    return issues
 
 def extract_addresses_from_df(df):
     """Extract normalized addresses from a dataframe."""
@@ -636,40 +672,61 @@ else:
             rows_with_email = sum(1 for r in all_rows if r.get('Tenant Email','').strip())
             coverage_pct = int((rows_with_filter / total_rows) * 100) if total_rows else 0
             email_pct = int((rows_with_email / total_rows) * 100) if total_rows else 0
+            dupes = detect_duplicates(all_rows)
+            nonstandard = [r for r in all_rows if r.get('_nonstandard_filter')]
 
-            # Stats row
+            # Stat cards
             cols = st.columns(4)
             with cols[0]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{total_rows}</div><div class="stat-label">Total Rows</div></div>', unsafe_allow_html=True)
             with cols[1]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{len(file_results)}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
             with cols[2]:
-                color = "#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 50 else "#ef4444"
-                st.markdown(f'<div class="stat"><div class="stat-num" style="color:{color}">{coverage_pct}%</div><div class="stat-label">Filter Coverage</div></div>', unsafe_allow_html=True)
+                c = "#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 50 else "#ef4444"
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:{c}">{coverage_pct}%</div><div class="stat-label">Filter Coverage</div></div>', unsafe_allow_html=True)
             with cols[3]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{email_pct}%</div><div class="stat-label">Email Coverage</div></div>', unsafe_allow_html=True)
+
+            # Warnings
+            if coverage_pct < 80:
+                st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents missing a filter size — follow up before shipping.</p>", unsafe_allow_html=True)
+            missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
+            if missing_emails:
+                st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — will still be included.</p>", unsafe_allow_html=True)
+            if dupes:
+                st.markdown(f"<p style='color:#ef4444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(dupes)} duplicate address(es) found — review before shipping.</p>", unsafe_allow_html=True)
+            if nonstandard:
+                st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {len(nonstandard)} non-standard filter size(s) — verify before ordering.</p>", unsafe_allow_html=True)
 
             if len(file_results) > 1:
                 for fname, count in file_results:
                     st.markdown(f'<div class="file-row">📄 {fname} <span style="color:#f97316">→ {count} rows</span></div>', unsafe_allow_html=True)
 
-            if coverage_pct < 80:
-                st.markdown(f"<p style='color:#eab308; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents missing a filter size — follow up before shipping.</p>", unsafe_allow_html=True)
-
-            missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
-            if missing_emails:
-                st.markdown(f"<p style='color:#444; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — will still be included.</p>", unsafe_allow_html=True)
-
+            # Smart preview
+            dupe_set = {i for orig, dupe, _ in dupes for i in (orig, dupe)}
             with st.expander(f"Preview {total_rows} rows"):
-                preview_data = [{
-                    'Name': r['Recipient Name'],
-                    'Address': r['Address'],
-                    'City': r['City'],
-                    'State': r['State'],
-                    'Filter Size': r['Custom Field 1'],
-                    'Email': r['Tenant Email'],
-                } for r in all_rows]
-                st.dataframe(preview_data, use_container_width=True, hide_index=True)
+                show_issues = st.checkbox("Issues only", key="preview_issues_only")
+                preview_rows = []
+                for i, r in enumerate(all_rows):
+                    row_issues = get_row_issues(r, dupe_set)
+                    if i in dupe_set:
+                        row_issues.append('duplicate')
+                    if show_issues and not row_issues:
+                        continue
+                    preview_rows.append({
+                        'Status': '⚠' if row_issues else '✓',
+                        'Name': r['Recipient Name'],
+                        'Address': r['Address'],
+                        'City': r['City'],
+                        'ST': r['State'],
+                        'Filter': r['Custom Field 1'] or '—',
+                        'Email': '✓' if r.get('Tenant Email','').strip() else '✗',
+                        'Issues': ', '.join(row_issues) if row_issues else '',
+                    })
+                if preview_rows:
+                    st.dataframe(preview_rows, use_container_width=True, hide_index=True)
+                else:
+                    st.markdown("<p style='color:#22c55e; font-family:IBM Plex Mono,monospace; font-size:12px;'>✓ No issues found</p>", unsafe_allow_html=True)
 
             st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
 
