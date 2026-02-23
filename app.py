@@ -67,6 +67,11 @@ html, body, [class*="css"] {
 
 #MainMenu, footer, header { visibility: hidden; }
 
+/* No horizontal scroll */
+html, body { overflow-x: hidden !important; max-width: 100vw !important; }
+[data-testid="stAppViewContainer"] { overflow-x: hidden !important; }
+[data-testid="stMain"] { overflow-x: hidden !important; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -688,7 +693,7 @@ with st.sidebar:
     [data-testid="stSidebar"] .stButton > button {
         background: transparent !important;
         border: none !important;
-        color: #333 !important;
+        color: #7a3a10 !important;
         font-family: 'IBM Plex Mono', monospace !important;
         font-size: 11px !important;
         padding: 4px 0 !important;
@@ -696,6 +701,7 @@ with st.sidebar:
         width: auto !important;
         letter-spacing: 0.5px !important;
         margin: 0 !important;
+        transition: color 0.15s ease !important;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
         color: #f97316 !important;
@@ -717,8 +723,6 @@ with st.sidebar:
     if st.session_state.get('master_rows'):
         st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Master</p>", unsafe_allow_html=True)
         st.markdown(f"<p style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>{len(st.session_state.master_rows)} rows</p>", unsafe_allow_html=True)
-
-    st.markdown("<div style='border-top:1px solid #1a1a1a; margin:12px 0 12px;'></div>", unsafe_allow_html=True)
 
     if st.button("tutorial", key="show_tutorial"):
         st.session_state.tutorial_step = 1
