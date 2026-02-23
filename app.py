@@ -116,9 +116,8 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 [data-testid="stFileUploaderDropzone"] { background: var(--surface) !important; }
 
 /* Buttons - download */
-/* Footer action buttons */
-.site-footer ~ div .stButton > button,
-[data-testid="stHorizontalBlock"] .stButton > button {
+/* Footer action buttons - tutorial and restart */
+[data-testid="stHorizontalBlock"]:last-of-type .stButton > button {
     background: transparent !important;
     border: none !important;
     color: #7a3a10 !important;
@@ -129,7 +128,7 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
     letter-spacing: 0.5px !important;
     transition: color 0.15s ease !important;
 }
-[data-testid="stHorizontalBlock"] .stButton > button:hover {
+[data-testid="stHorizontalBlock"]:last-of-type .stButton > button:hover {
     color: #f97316 !important;
     background: transparent !important;
     border: none !important;
@@ -631,24 +630,85 @@ st.markdown(f"""
 
 TUTORIAL_STEPS = [
     {
-        "title": "Welcome to Filter Tools",
-        "body": "This tool converts Beagle property reports into ShipStation-ready CSVs — with smart validation built in.<br><br>It walks you through <strong>3 steps</strong>: Convert &rarr; Validate Shipments &rarr; Validate Charges.<br><br>You can download your CSV at any step if you want to skip ahead.",
+        "title": "How this works",
+        "subtitle": "3 steps. Takes about 60 seconds.",
+        "demo": """
+        <div style='display:flex; gap:8px; margin:16px 0;'>
+            <div style='flex:1; padding:12px; background:#111; border:1px solid #f97316; border-radius:4px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#f97316;'>01 Convert</div>
+            <div style='display:flex; align-items:center; color:#333; font-size:16px;'>→</div>
+            <div style='flex:1; padding:12px; background:#111; border:1px solid #222; border-radius:4px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>02 Validate Shipments</div>
+            <div style='display:flex; align-items:center; color:#333; font-size:16px;'>→</div>
+            <div style='flex:1; padding:12px; background:#111; border:1px solid #222; border-radius:4px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>03 Validate Charges</div>
+        </div>
+        <p style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#555; margin-top:8px;'>You can download and stop at any step. No step is required.</p>
+        """,
     },
     {
-        "title": "Step 1 — Convert Report",
-        "body": "Upload one or more <strong>Beagle xlsx files</strong>.<br><br>The tool will automatically detect the property name from the filename. If it cannot find it, it will ask you to type it in.<br><br>After upload you will see stats, warnings, and a row preview. Use the <strong>Issues Only</strong> toggle to quickly spot rows that need attention.",
+        "title": "Step 1 — Upload your Beagle file",
+        "subtitle": "Drop it in. The property name detects itself.",
+        "demo": """
+        <div style='background:#111; border:1px dashed #2a2a2a; border-radius:4px; padding:16px; margin:12px 0; text-align:center;'>
+            <div style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>📄 Report_from_Beagle_air-filter-responses-<span style='color:#f97316;'>Freedom-House</span>.xlsx</div>
+        </div>
+        <div style='margin-top:8px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#555;'>✓ Detected from filename — verify or edit below</div>
+        <div style='background:#1a1a1a; border:1px solid #2a2a2a; border-radius:4px; padding:8px 12px; margin-top:6px; font-family:IBM Plex Mono,monospace; font-size:12px; color:#e8e8e8;'>Freedom House</div>
+        <div style='display:flex; gap:16px; margin-top:16px;'>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#f97316;'>149</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Rows</div></div>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#22c55e;'>100%</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Filter Coverage</div></div>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#f0f0f0;'>100%</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Email Coverage</div></div>
+        </div>
+        """,
     },
     {
-        "title": "Step 2 — Validate Shipments",
-        "body": "Upload a <strong>recent ShipStation export</strong> (CSV or xlsx).<br><br>Anyone already shipped in the past 90 days is automatically excluded — the baseline history back to early 2024 is already loaded.<br><br>You will see exactly how many rows were excluded and why.",
+        "title": "Step 2 — Cut anyone already shipped",
+        "subtitle": "History back to early 2024 is pre-loaded. Just add recent exports.",
+        "demo": """
+        <div style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#22c55e; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</div>
+        <div style='background:#111; border:1px dashed #2a2a2a; border-radius:4px; padding:12px; margin-bottom:16px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>📄 shipments_recent.csv — uploaded</div>
+        <div style='display:flex; gap:16px;'>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#f97316;'>149</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Total</div></div>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#22c55e;'>23</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>To Ship</div></div>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#ef4444;'>126</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Excluded</div></div>
+        </div>
+        <p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555; margin-top:12px;'>The 126 excluded already got filters within 90 days. Only 23 are new.</p>
+        """,
     },
     {
-        "title": "Step 3 — Validate Charges",
-        "body": "Upload a <strong>charge detail report</strong> to confirm only paying tenants are included.<br><br>Rows not found in the charge detail are <strong>flagged for review</strong> — not silently dropped. You can download the flagged list separately.<br><br>This step is optional — you can skip and download at any point.",
+        "title": "Step 3 — Confirm they're paying",
+        "subtitle": "Upload a charge detail. Non-payers get flagged, not deleted.",
+        "demo": """
+        <div style='display:flex; gap:16px; margin-bottom:16px;'>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#22c55e;'>19</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Approved</div></div>
+            <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#eab308;'>4</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Flagged</div></div>
+        </div>
+        <div style='background:#1a1a1a; border:1px solid #2a2a2a; border-radius:4px; padding:10px 14px; margin-bottom:6px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#eab308;'>🟡 JOHN SMITH — 123 Main St, Austin TX</div>
+        <div style='background:#1a1a1a; border:1px solid #2a2a2a; border-radius:4px; padding:10px 14px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#eab308;'>🟡 JANE DOE — 456 Oak Ave, Round Rock TX</div>
+        <p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555; margin-top:10px;'>Flagged rows download separately so someone can verify enrollment.</p>
+        """,
     },
     {
-        "title": "A few things to know",
-        "body": "<strong>Restart</strong> in the sidebar wipes the session completely.<br><br><strong>Edit buttons</strong> on completed steps let you go back without losing your data.<br><br><strong>Master CSV</strong> accumulates rows across multiple property uploads in the same session — grab it at the end for a combined ShipStation import.<br><br>You are all set — go ahead and upload your first file.",
+        "title": "One last thing",
+        "subtitle": "Tips that save time.",
+        "demo": """
+        <div style='display:flex; flex-direction:column; gap:10px; margin-top:8px;'>
+            <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <span style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:12px; flex-shrink:0;'>→</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#666;'><strong style='color:#e8e8e8;'>Master CSV</strong> — upload multiple properties, grab one combined file at the end</span>
+            </div>
+            <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <span style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:12px; flex-shrink:0;'>→</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#666;'><strong style='color:#e8e8e8;'>Edit buttons</strong> — go back to any step without losing your data</span>
+            </div>
+            <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <span style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:12px; flex-shrink:0;'>→</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#666;'><strong style='color:#e8e8e8;'>Issues only</strong> — toggle in the preview to see only rows that need attention</span>
+            </div>
+            <div style='display:flex; gap:12px; align-items:flex-start;'>
+                <span style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:12px; flex-shrink:0;'>→</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#666;'><strong style='color:#e8e8e8;'>Restart</strong> — wipes everything and starts fresh</span>
+            </div>
+        </div>
+        """,
     },
 ]
 
@@ -660,13 +720,13 @@ if 1 <= t_step <= len(TUTORIAL_STEPS):
         f'<div class="tutorial-dot {"active" if i+1 == t_step else "done" if i+1 < t_step else ""}"></div>'
         for i in range(len(TUTORIAL_STEPS))
     )
-    body_formatted = slide["body"]
     st.markdown(f"""
     <div class="tutorial-overlay"></div>
     <div class="tutorial-card">
-        <div class="tutorial-step-num">Step {t_step} of {len(TUTORIAL_STEPS)}</div>
+        <div class="tutorial-step-num">{t_step} of {len(TUTORIAL_STEPS)}</div>
         <div class="tutorial-title">{slide["title"]}</div>
-        <div class="tutorial-body">{body_formatted}</div>
+        <div class="tutorial-subtitle">{slide["subtitle"]}</div>
+        <div class="tutorial-demo">{slide["demo"]}</div>
         <div class="tutorial-dots">{dots_html}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1057,24 +1117,24 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
 master_count = len(st.session_state.get('master_rows', []))
 master_txt = f" · {master_count} in master" if master_count else ""
 
-footer_left = f"FILTER TOOLS v0.1{master_txt}"
-
 st.markdown(f"""
 <div style='height:60px'></div>
 <div class='site-footer'>
-    <span>{footer_left}</span>
-    <span style='display:flex; align-items:center; gap:20px;'>
-        <span class='footer-link' id='tut-link'>Built by <span class='author'>Matthew Gamble</span></span>
+    <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#2a2a2a;'>FILTER TOOLS v0.1{master_txt}</span>
+    <span style='display:flex; align-items:center; gap:24px;'>
+        <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#2a2a2a;'>Built by <span style='color:#f97316;'>Matthew Gamble</span></span>
     </span>
 </div>
 """, unsafe_allow_html=True)
 
-foot_col1, foot_col2, foot_col3 = st.columns([6, 1, 1])
-with foot_col2:
+# Footer action row — sits just above footer
+st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+fa_col1, fa_col2, fa_col3 = st.columns([8, 1, 1])
+with fa_col2:
     if st.button("tutorial", key="show_tutorial"):
         st.session_state.tutorial_step = 1
         st.rerun()
-with foot_col3:
+with fa_col3:
     if st.button("restart", key="start_over"):
         for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
             if key in st.session_state:
