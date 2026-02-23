@@ -504,6 +504,49 @@ def rows_to_csv_bytes(rows):
     writer.writerows(rows)
     return buf.getvalue().encode('utf-8')
 
+REQUIRED_FIELDS = {
+    'Address': 'Street address',
+    'City': 'City',
+    'State': 'State',
+    'Postal Code': 'Zip code',
+    'Custom Field 1': 'Filter size',
+}
+
+def get_missing_fields(row):
+    """Return list of missing required field labels for a row."""
+    missing = []
+    for field, label in REQUIRED_FIELDS.items():
+        val = row.get(field, '')
+        if not str(val).strip():
+            missing.append(label)
+    return missing
+
+def split_complete_incomplete(rows):
+    """Split rows into (complete, incomplete). Incomplete = any required field missing."""
+    complete = []
+    incomplete = []
+    for row in rows:
+        missing = get_missing_fields(row)
+        if missing:
+            row = dict(row)
+            row['_missing_fields'] = ', '.join(missing)
+            incomplete.append(row)
+        else:
+            complete.append(row)
+    return complete, incomplete
+
+def incomplete_to_csv_bytes(rows):
+    """CSV for sending to AM/PM — shows what's missing."""
+    if not rows:
+        return b''
+    fieldnames = ['Recipient Name', 'Address', 'City', 'State', 'Postal Code',
+                  'Custom Field 1', 'Tenant Email', 'Custom Field 2', '_missing_fields']
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue().encode('utf-8')
+
 def detect_duplicates(rows):
     """Find rows with the same normalized address within the same upload."""
     seen = {}
@@ -1020,18 +1063,22 @@ else:
         if all_rows:
             st.markdown("<hr>", unsafe_allow_html=True)
 
+            # Split complete vs incomplete
+            complete_rows, incomplete_rows = split_complete_incomplete(all_rows)
+
             total_rows = len(all_rows)
-            rows_with_filter = sum(1 for r in all_rows if r.get('Custom Field 1','').strip())
-            rows_with_email = sum(1 for r in all_rows if r.get('Tenant Email','').strip())
-            coverage_pct = int((rows_with_filter / total_rows) * 100) if total_rows else 0
-            email_pct = int((rows_with_email / total_rows) * 100) if total_rows else 0
-            dupes = detect_duplicates(all_rows)
-            nonstandard = [r for r in all_rows if r.get('_nonstandard_filter')]
+            rows_with_filter = sum(1 for r in complete_rows if r.get('Custom Field 1','').strip())
+            rows_with_email = sum(1 for r in complete_rows if r.get('Tenant Email','').strip())
+            coverage_pct = int((rows_with_filter / len(complete_rows)) * 100) if complete_rows else 0
+            email_pct = int((rows_with_email / len(complete_rows)) * 100) if complete_rows else 0
+            dupes = detect_duplicates(complete_rows)
+            nonstandard = [r for r in complete_rows if r.get('_nonstandard_filter')]
 
             # Stat cards
             cols = st.columns(4)
             with cols[0]:
-                st.markdown(f'<div class="stat"><div class="stat-num">{total_rows}</div><div class="stat-label">Total Rows</div></div>', unsafe_allow_html=True)
+                incomplete_note = f'<div style="font-family:IBM Plex Mono,monospace;font-size:9px;color:#ef4444;margin-top:2px;">{len(incomplete_rows)} incomplete</div>' if incomplete_rows else ''
+                st.markdown(f'<div class="stat"><div class="stat-num">{len(ready_rows)}</div><div class="stat-label">Ready Rows</div>{incomplete_note}</div>', unsafe_allow_html=True)
             with cols[1]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{len(file_results)}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
             with cols[2]:
@@ -1041,6 +1088,21 @@ else:
                 st.markdown(f'<div class="stat"><div class="stat-num">{email_pct}%</div><div class="stat-label">Email Coverage</div></div>', unsafe_allow_html=True)
 
             # Warnings
+            # Incomplete rows banner
+            if incomplete_rows:
+                st.markdown(f"""
+                <div style='background:rgba(239,68,68,0.05); border:1px solid #3a1a1a; border-radius:4px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between;'>
+                    <div>
+                        <p style='font-family:IBM Plex Mono,monospace; font-size:12px; color:#ef4444; margin:0;'>🚩 {len(incomplete_rows)} row(s) excluded — missing required data</p>
+                        <p style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#555; margin:4px 0 0;'>{len(complete_rows)} of {total_rows} rows are complete and ready to process</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                with st.expander(f"See {len(incomplete_rows)} incomplete row(s)"):
+                    for r in incomplete_rows:
+                        addr = r.get('Address') or r.get('Recipient Name') or '—'
+                        st.markdown(f'<div class="excluded-row" style="border-color:#3a1010;">⚠ {addr} — <span style="color:#ef4444;">missing: {r.get("_missing_fields","")}</span></div>', unsafe_allow_html=True)
+
             if coverage_pct < 80:
                 st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents missing a filter size — follow up before shipping.</p>", unsafe_allow_html=True)
             missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
@@ -1105,28 +1167,37 @@ else:
             if 'master_rows' not in st.session_state:
                 st.session_state.master_rows = []
             existing_keys = {(r['Recipient Name'], r['Address']) for r in st.session_state.master_rows}
-            new_to_master = [r for r in all_rows if (r['Recipient Name'], r['Address']) not in existing_keys]
+            new_to_master = [r for r in ready_rows if (r['Recipient Name'], r['Address']) not in existing_keys]
             st.session_state.master_rows.extend(new_to_master)
 
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                csv_bytes = rows_to_csv_bytes(all_rows)
+            # Use only complete rows going forward
+            ready_rows = complete_rows
+
+            btn_cols = st.columns(4) if incomplete_rows else st.columns(3)
+            with btn_cols[0]:
+                csv_bytes = rows_to_csv_bytes(ready_rows)
                 filename = f"{property_name.replace(' ', '_')}_normalized.csv"
-                st.download_button("⬇️ Download", data=csv_bytes, file_name=filename, mime="text/csv")
-            with col2:
+                st.download_button(f"⬇️ Download ({len(ready_rows)})", data=csv_bytes, file_name=filename, mime="text/csv")
+            with btn_cols[1]:
                 if len(st.session_state.master_rows) > 0:
                     master_bytes = rows_to_csv_bytes(st.session_state.master_rows)
                     st.download_button(f"⬇️ Master ({len(st.session_state.master_rows)})", data=master_bytes, file_name="master_orders.csv", mime="text/csv")
-            with col3:
+            if incomplete_rows:
+                with btn_cols[2]:
+                    inc_bytes = incomplete_to_csv_bytes(incomplete_rows)
+                    inc_filename = f"{property_name.replace(' ', '_')}_incomplete.csv"
+                    st.download_button(f"⬇️ Incomplete ({len(incomplete_rows)})", data=inc_bytes, file_name=inc_filename, mime="text/csv", help="Send to AM/PM to fill in missing data")
+            with btn_cols[-1]:
                 if st.button("Validate Shipments →"):
-                    st.session_state.normalized_rows = all_rows
+                    st.session_state.normalized_rows = ready_rows
                     st.session_state.property_name = property_name
                     st.session_state.step1_stats = {
                         'property': property_name,
-                        'total': total_rows,
+                        'total': len(ready_rows),
                         'coverage': coverage_pct,
                         'email_pct': email_pct,
                         'files': len(file_results),
+                        'incomplete': len(incomplete_rows),
                     }
                     st.session_state.step = 2
                     st.rerun()
