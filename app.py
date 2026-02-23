@@ -330,9 +330,9 @@ if 'property_name' not in st.session_state:
 
 # --- Header ---
 st.markdown(f"""
-<div style='margin-bottom:28px;'>
-    <img src='data:image/png;base64,{LOGO_B64}' style='height:48px;'>
-    <p style='color:#555; font-size:13px; margin-top:10px; margin-bottom:0;'>Air Filter CSV Converter</p>
+<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; padding-bottom:16px; border-bottom:1px solid #1e1e1e;'>
+    <img src='data:image/png;base64,{LOGO_B64}' style='height:40px;'>
+    <p style='color:#333; font-size:12px; margin:0;'>Air Filter Fulfillment Tool</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -345,22 +345,21 @@ st.markdown(f'<div class="step-badge {"done" if step1_done else "active"}">{"✓
 if st.session_state.step == 1:
     uploaded_files = st.file_uploader("Upload Beagle xlsx", type=["xlsx"], accept_multiple_files=True)
 
-    # Auto-detect property name from filename
-    detected = None
+    property_name = None
     if uploaded_files:
+        # Auto-detect property name from filename
+        detected = None
         for uf in uploaded_files:
             detected = extract_property_from_filename(uf.name)
             if detected:
                 break
 
-    if uploaded_files and detected:
-        st.markdown(f"<p style='color:#555; font-size:12px; margin-top:8px; margin-bottom:4px;'>✓ Detected from filename — verify or edit below</p>", unsafe_allow_html=True)
-        property_name = st.text_input("Property Name", value=detected, placeholder="e.g. Freedom House")
-    elif uploaded_files and not detected:
-        st.markdown("<p style='color:#f97316; font-size:12px; margin-top:8px; margin-bottom:4px;'>⚠️ Couldn't detect property name — please type it below</p>", unsafe_allow_html=True)
-        property_name = st.text_input("Property Name", value="", placeholder="e.g. Freedom House")
-    else:
-        property_name = st.text_input("Property Name", placeholder="e.g. Freedom House", value=st.session_state.property_name)
+        if detected:
+            st.markdown(f"<p style='color:#555; font-size:12px; margin-top:12px; margin-bottom:4px;'>✓ Detected from filename — verify or edit below</p>", unsafe_allow_html=True)
+            property_name = st.text_input("Property Name", value=detected, placeholder="e.g. Freedom House")
+        else:
+            st.markdown("<p style='color:#f97316; font-size:12px; margin-top:12px; margin-bottom:4px;'>⚠️ Couldn't detect property name — please type it below</p>", unsafe_allow_html=True)
+            property_name = st.text_input("Property Name", value="", placeholder="e.g. Freedom House")
 
     if uploaded_files and property_name:
         all_rows = []
@@ -380,15 +379,50 @@ if st.session_state.step == 1:
 
         if all_rows:
             st.markdown("<hr>", unsafe_allow_html=True)
-            cols = st.columns(2)
+
+            # --- Top stats ---
+            total_rows = len(all_rows)
+            rows_with_filter = sum(1 for r in all_rows if r.get('Custom Field 1','').strip())
+            rows_with_email = sum(1 for r in all_rows if r.get('Tenant Email','').strip())
+            coverage_pct = int((rows_with_filter / total_rows) * 100) if total_rows else 0
+
+            cols = st.columns(4)
             with cols[0]:
-                st.markdown(f'<div class="stat"><div class="stat-num">{len(all_rows)}</div><div class="stat-label">Rows</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat"><div class="stat-num">{total_rows}</div><div class="stat-label">Total Rows</div></div>', unsafe_allow_html=True)
             with cols[1]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{len(file_results)}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
+            with cols[2]:
+                color = "#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 50 else "#ef4444"
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:{color}">{coverage_pct}%</div><div class="stat-label">Filter Size Coverage</div></div>', unsafe_allow_html=True)
+            with cols[3]:
+                email_pct = int((rows_with_email / total_rows) * 100) if total_rows else 0
+                st.markdown(f'<div class="stat"><div class="stat-num">{email_pct}%</div><div class="stat-label">Email Coverage</div></div>', unsafe_allow_html=True)
 
+            # --- Per-property breakdown ---
             if len(file_results) > 1:
                 for fname, count in file_results:
                     st.markdown(f'<div class="file-row">📄 {fname} <span style="color:#f97316">→ {count} rows</span></div>', unsafe_allow_html=True)
+
+            # --- Filter size coverage warning ---
+            if coverage_pct < 80:
+                st.markdown(f"<p style='color:#eab308; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents are missing a filter size — consider following up before shipping.</p>", unsafe_allow_html=True)
+
+            # --- Missing email warning ---
+            missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
+            if missing_emails:
+                st.markdown(f"<p style='color:#555; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — they will still be included.</p>", unsafe_allow_html=True)
+
+            # --- Preview table ---
+            with st.expander(f"Preview {total_rows} rows"):
+                preview_data = [{
+                    'Name': r['Recipient Name'],
+                    'Address': r['Address'],
+                    'City': r['City'],
+                    'State': r['State'],
+                    'Filter Size': r['Custom Field 1'],
+                    'Email': r['Tenant Email'],
+                } for r in all_rows]
+                st.dataframe(preview_data, use_container_width=True, hide_index=True)
 
             st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
             # Accumulate into master CSV stored in session
@@ -556,3 +590,30 @@ if st.session_state.step >= 3:
         else:
             st.markdown("<p style='color:#555; font-size:13px;'>No charge detail uploaded yet.</p>", unsafe_allow_html=True)
             st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+
+# ── SUMMARY ─────────────────────────────────────────────────────────────
+
+if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
+    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="step-badge done">✓ Run Summary</div>', unsafe_allow_html=True)
+
+    total_in = len(st.session_state.normalized_rows) if st.session_state.normalized_rows else 0
+    total_after_shipment = len(st.session_state.validated_rows) if st.session_state.validated_rows else 0
+    excluded_shipment = total_in - total_after_shipment
+
+    cols = st.columns(3)
+    with cols[0]:
+        st.markdown(f'<div class="stat"><div class="stat-num">{total_in}</div><div class="stat-label">Started With</div></div>', unsafe_allow_html=True)
+    with cols[1]:
+        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{excluded_shipment}</div><div class="stat-label">Excluded (Shipped)</div></div>', unsafe_allow_html=True)
+    with cols[2]:
+        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{total_after_shipment}</div><div class="stat-label">Ready to Ship</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<p style='color:#333; font-size:12px; margin-top:8px;'>Upload a charge detail in Step 3 to further filter by paying tenants.</p>", unsafe_allow_html=True)
+
+# ── FOOTER ──────────────────────────────────────────────────────────────
+st.markdown("""
+<div style='margin-top:60px; padding-top:16px; border-top:1px solid #1e1e1e; text-align:center;'>
+    <p style='color:#333; font-size:12px; margin:0;'>Built by <span style='color:#f97316;'>Matthew Gamble</span></p>
+</div>
+""", unsafe_allow_html=True)
