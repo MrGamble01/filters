@@ -478,10 +478,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Start Over button sits in navbar position via columns
-nav_col1, nav_col2, nav_col3 = st.columns([6,2,2])
-with nav_col3:
-    if st.button("↺ Start Over", key="start_over"):
+# Start Over button — far right, minimal footprint
+nav_col1, nav_col2 = st.columns([9,1])
+with nav_col2:
+    if st.button("↺", key="start_over", help="Start Over"):
         for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
             if key in st.session_state:
                 del st.session_state[key]
