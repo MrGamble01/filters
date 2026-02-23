@@ -306,12 +306,34 @@ def merge_address(street, unit):
     return f'{street} UNIT {unit}'
 
 def normalize_address_key(addr):
-    """Lowercase, strip punctuation for fuzzy matching."""
+    """Normalize address for fuzzy matching — handles APT/UNIT/# variations."""
     if not addr:
         return ''
-    addr = str(addr).lower()
+    addr = str(addr).lower().strip()
+    # Standardize unit designators
+    addr = re.sub(r'apartment', 'apt', addr)
+    addr = re.sub(r'unit', 'apt', addr)
+    addr = re.sub(r'suite', 'apt', addr)
+    addr = re.sub(r'ste', 'apt', addr)
+    addr = re.sub(r'no\.?', 'apt', addr)
+    addr = re.sub(r'#\s*', 'apt ', addr)
+    # Remove punctuation except spaces
     addr = re.sub(r'[^\w\s]', '', addr)
+    # Collapse whitespace
     addr = re.sub(r'\s+', ' ', addr).strip()
+    # Standardize directional abbreviations
+    addr = re.sub(r'north', 'n', addr)
+    addr = re.sub(r'south', 's', addr)
+    addr = re.sub(r'east', 'e', addr)
+    addr = re.sub(r'west', 'w', addr)
+    addr = re.sub(r'street', 'st', addr)
+    addr = re.sub(r'avenue', 'ave', addr)
+    addr = re.sub(r'drive', 'dr', addr)
+    addr = re.sub(r'boulevard', 'blvd', addr)
+    addr = re.sub(r'road', 'rd', addr)
+    addr = re.sub(r'court', 'ct', addr)
+    addr = re.sub(r'lane', 'ln', addr)
+    addr = re.sub(r'circle', 'cir', addr)
     return addr
 
 def extract_property_from_filename(filename):
@@ -478,16 +500,59 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Start Over button — far right, minimal footprint
-nav_col1, nav_col2 = st.columns([9,1])
-with nav_col2:
-    if st.button("↺", key="start_over", help="Start Over"):
+# Start Over in sidebar — completely out of main flow
+with st.sidebar:
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] {
+        background-color: #080808 !important;
+        border-right: 1px solid #1f1f1f !important;
+        min-width: 160px !important;
+        max-width: 160px !important;
+    }
+    [data-testid="stSidebar"] * { font-family: 'IBM Plex Mono', monospace !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown("<p style='color:#333; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px;'>Session</p>", unsafe_allow_html=True)
+    if st.button("↺ Restart", key="start_over"):
         for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
+    if st.session_state.get('step',1) > 1:
+        st.markdown(f"<p style='color:#333; font-size:10px; margin-top:16px;'>Step {st.session_state.get('step',1)} of 3</p>", unsafe_allow_html=True)
+    if st.session_state.get('property_name'):
+        st.markdown(f"<p style='color:#444; font-size:10px; margin-top:8px; word-break:break-word;'>{st.session_state.property_name}</p>", unsafe_allow_html=True)
+    if st.session_state.get('master_rows'):
+        st.markdown(f"<p style='color:#f97316; font-size:10px; margin-top:8px;'>{len(st.session_state.master_rows)} in master</p>", unsafe_allow_html=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+# Step progress indicator
+_step = st.session_state.get('step', 1)
+def _step_style(n):
+    if n < _step: return "color:#22c55e; border-color:#1a3a25; background:rgba(34,197,94,0.05);"
+    if n == _step: return "color:#f97316; border-color:#f97316; background:rgba(249,115,22,0.08);"
+    return "color:#2a2a2a; border-color:#1f1f1f; background:transparent;"
+def _step_label(n):
+    labels = {1:"Convert", 2:"Validate Shipments", 3:"Validate Charges"}
+    return labels[n]
+
+st.markdown(f"""
+<div style='display:flex; align-items:center; gap:0; margin-bottom:28px;'>
+    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(1)}'>
+        <span>01</span><span>{_step_label(1)}</span>
+    </div>
+    <div style='width:24px; height:1px; background:#1f1f1f;'></div>
+    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(2)}'>
+        <span>02</span><span>{_step_label(2)}</span>
+    </div>
+    <div style='width:24px; height:1px; background:#1f1f1f;'></div>
+    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(3)}'>
+        <span>03</span><span>{_step_label(3)}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ── STEP 1 ──────────────────────────────────────────────────────────────
@@ -544,13 +609,21 @@ else:
         file_results = []
         errors = []
 
-        for f in uploaded_files:
-            try:
-                rows = parse_beagle_xlsx(f, property_name)
-                all_rows.extend(rows)
-                file_results.append((f.name, len(rows)))
-            except Exception as e:
-                errors.append((f.name, str(e)))
+        with st.spinner("Processing files..."):
+            for f in uploaded_files:
+                try:
+                    # Validate file is actually an xlsx
+                    if not f.name.lower().endswith('.xlsx'):
+                        errors.append((f.name, "File must be a .xlsx Excel file"))
+                        continue
+                    rows = parse_beagle_xlsx(f, property_name)
+                    if not rows:
+                        errors.append((f.name, "No valid rows found — check the file format matches the Beagle report template"))
+                        continue
+                    all_rows.extend(rows)
+                    file_results.append((f.name, len(rows)))
+                except Exception as e:
+                    errors.append((f.name, f"Could not parse file — make sure it's a Beagle xlsx report ({str(e)})"))
 
         for fname, err in errors:
             st.error(f"❌ {fname}: {err}")
@@ -663,45 +736,50 @@ if st.session_state.step >= 2:
         recent_file = st.file_uploader("Upload Recent Shipments", type=["csv", "xlsx"], key="recent")
 
         if recent_file:
-            shipped = get_baseline_addresses()
-            shipped |= get_shipped_addresses(recent_file)
+            with st.spinner("Comparing against shipment history..."):
+                # Validate file type
+                if not recent_file.name.lower().endswith(('.csv', '.xlsx')):
+                    st.error("⚠️ Please upload a CSV or xlsx file exported from ShipStation.")
+                else:
+                    shipped = get_baseline_addresses()
+                    shipped |= get_shipped_addresses(recent_file)
+                    new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
-            new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
+            if recent_file.name.lower().endswith(('.csv', '.xlsx')):
+                st.markdown("<hr>", unsafe_allow_html=True)
+                cols = st.columns(3)
+                with cols[0]:
+                    st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
+                with cols[1]:
+                    st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
+                with cols[2]:
+                    st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
 
-            st.markdown("<hr>", unsafe_allow_html=True)
-            cols = st.columns(3)
-            with cols[0]:
-                st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
-            with cols[1]:
-                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
-            with cols[2]:
-                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
+                if excluded:
+                    with st.expander(f"See {len(excluded)} excluded addresses"):
+                        for row in excluded:
+                            st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
 
-            if excluded:
-                with st.expander(f"See {len(excluded)} excluded addresses"):
-                    for row in excluded:
-                        st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
+                if new_rows:
+                    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+                    csv_bytes = rows_to_csv_bytes(new_rows)
+                    filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
 
-            if new_rows:
-                st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-                csv_bytes = rows_to_csv_bytes(new_rows)
-                filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
-                with col2:
-                    if st.button("Validate Charges →"):
-                        st.session_state.validated_rows = new_rows
-                        st.session_state.step2_stats = {
-                            'total': len(st.session_state.normalized_rows),
-                            'new': len(new_rows),
-                            'excluded': len(excluded),
-                        }
-                        st.session_state.step = 3
-                        st.rerun()
-            else:
-                st.warning("All addresses were excluded — nothing new to ship.")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+                    with col2:
+                        if st.button("Validate Charges →"):
+                            st.session_state.validated_rows = new_rows
+                            st.session_state.step2_stats = {
+                                'total': len(st.session_state.normalized_rows),
+                                'new': len(new_rows),
+                                'excluded': len(excluded),
+                            }
+                            st.session_state.step = 3
+                            st.rerun()
+                else:
+                    st.warning("All addresses were excluded — nothing new to ship.")
 
 # ── STEP 3 ──────────────────────────────────────────────────────────────
 
