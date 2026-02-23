@@ -176,6 +176,17 @@ def normalize_address_key(addr):
     addr = re.sub(r'\s+', ' ', addr).strip()
     return addr
 
+def extract_property_from_filename(filename):
+    """Try to extract property name from Beagle report filename."""
+    name = filename.rsplit('.', 1)[0]
+    # Pattern: air-filter-responses-PROPERTY-NAME or Report_from_Beagle_air-filter-responses-PROPERTY-NAME
+    match = re.search(r'air-filter-responses-(.+?)(?:__\d+_)*$', name, re.IGNORECASE)
+    if match:
+        prop = match.group(1).replace('-', ' ').replace('_', ' ').strip()
+        # Title case but preserve all-caps abbreviations
+        return prop.title()
+    return None
+
 def parse_beagle_xlsx(file, property_name):
     wb = openpyxl.load_workbook(file)
     ws = wb.active
@@ -332,8 +343,24 @@ step1_done = st.session_state.step >= 2
 st.markdown(f'<div class="step-badge {"done" if step1_done else "active"}">{"✓ " if step1_done else ""}Step 1 — Convert Report</div>', unsafe_allow_html=True)
 
 if st.session_state.step == 1:
-    property_name = st.text_input("Property Name", placeholder="e.g. Freedom House", value=st.session_state.property_name)
     uploaded_files = st.file_uploader("Upload Beagle xlsx", type=["xlsx"], accept_multiple_files=True)
+
+    # Auto-detect property name from filename
+    detected = None
+    if uploaded_files:
+        for uf in uploaded_files:
+            detected = extract_property_from_filename(uf.name)
+            if detected:
+                break
+
+    if uploaded_files and detected:
+        st.markdown(f"<p style='color:#555; font-size:12px; margin-top:8px; margin-bottom:4px;'>✓ Detected from filename — verify or edit below</p>", unsafe_allow_html=True)
+        property_name = st.text_input("Property Name", value=detected, placeholder="e.g. Freedom House")
+    elif uploaded_files and not detected:
+        st.markdown("<p style='color:#f97316; font-size:12px; margin-top:8px; margin-bottom:4px;'>⚠️ Couldn't detect property name — please type it below</p>", unsafe_allow_html=True)
+        property_name = st.text_input("Property Name", value="", placeholder="e.g. Freedom House")
+    else:
+        property_name = st.text_input("Property Name", placeholder="e.g. Freedom House", value=st.session_state.property_name)
 
     if uploaded_files and property_name:
         all_rows = []
@@ -364,12 +391,24 @@ if st.session_state.step == 1:
                     st.markdown(f'<div class="file-row">📄 {fname} <span style="color:#f97316">→ {count} rows</span></div>', unsafe_allow_html=True)
 
             st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
+            # Accumulate into master CSV stored in session
+            if 'master_rows' not in st.session_state:
+                st.session_state.master_rows = []
+            # Add rows not already in master (by address+name key)
+            existing_keys = {(r['Recipient Name'], r['Address']) for r in st.session_state.master_rows}
+            new_to_master = [r for r in all_rows if (r['Recipient Name'], r['Address']) not in existing_keys]
+            st.session_state.master_rows.extend(new_to_master)
+
+            col1, col2, col3 = st.columns(3)
             with col1:
                 csv_bytes = rows_to_csv_bytes(all_rows)
                 filename = f"{property_name.replace(' ', '_')}_normalized.csv"
-                st.download_button("⬇️ Download CSV", data=csv_bytes, file_name=filename, mime="text/csv")
+                st.download_button("⬇️ Download", data=csv_bytes, file_name=filename, mime="text/csv")
             with col2:
+                if len(st.session_state.master_rows) > 0:
+                    master_bytes = rows_to_csv_bytes(st.session_state.master_rows)
+                    st.download_button(f"⬇️ Master ({len(st.session_state.master_rows)})", data=master_bytes, file_name="master_orders.csv", mime="text/csv")
+            with col3:
                 if st.button("Validate Shipments →"):
                     st.session_state.normalized_rows = all_rows
                     st.session_state.property_name = property_name
