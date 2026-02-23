@@ -478,7 +478,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+# Start Over button sits in navbar position via columns
+nav_col1, nav_col2, nav_col3 = st.columns([6,2,2])
+with nav_col3:
+    if st.button("↺ Start Over", key="start_over"):
+        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 
 # ── STEP 1 ──────────────────────────────────────────────────────────────
@@ -522,6 +531,13 @@ else:
         else:
             st.markdown("<p style='color:#f97316; font-size:12px; margin-top:12px; margin-bottom:4px;'>⚠️ Couldn't detect property name — please type it below</p>", unsafe_allow_html=True)
             property_name = st.text_input("Property Name", value="", placeholder="e.g. Freedom House")
+
+    # If we already have data from a previous run, show a continue option
+    if not uploaded_files and st.session_state.normalized_rows:
+        st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:8px;'>Previous data loaded: <span style='color:#f97316;'>{st.session_state.property_name} · {len(st.session_state.normalized_rows)} rows</span>. Upload a new file to replace, or continue with existing.</p>", unsafe_allow_html=True)
+        if st.button("Continue with existing data →", key="continue_existing"):
+            st.session_state.step = 2
+            st.rerun()
 
     if uploaded_files and property_name:
         all_rows = []
@@ -635,6 +651,7 @@ if st.session_state.step >= 2:
             """, unsafe_allow_html=True)
         with col_c:
             if st.button("← Edit Step 2", key="back2"):
+                # Go back but keep all data intact
                 st.session_state.step = 2
                 st.rerun()
     else:
