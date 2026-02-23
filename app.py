@@ -29,118 +29,256 @@ LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABt
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-* { font-family: 'Inter', sans-serif; }
-.stApp { background-color: #0f0f0f; }
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+
+:root {
+    --bg: #080808;
+    --surface: #111111;
+    --border: #1f1f1f;
+    --border-bright: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #444;
+    --orange: #f97316;
+    --orange-dim: rgba(249,115,22,0.08);
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, [class*="css"] {
+    font-family: 'Syne', sans-serif;
+    background-color: var(--bg) !important;
+    color: var(--text);
+}
+
+/* Subtle dot grid background */
+.stApp {
+    background-color: var(--bg) !important;
+    background-image: radial-gradient(circle, #1e1e1e 1px, transparent 1px) !important;
+    background-size: 28px 28px !important;
+}
+
+/* Fixed top navbar */
+.stApp > div:first-child {
+    padding-top: 64px !important;
+}
+
 #MainMenu, footer, header { visibility: hidden; }
 
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+
+/* Inputs */
 [data-testid="stTextInput"] input {
-    background-color: #1a1a1a !important;
-    border: 1px solid #2e2e2e !important;
-    border-radius: 6px !important;
-    color: #f0f0f0 !important;
-    font-size: 14px !important;
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border-bright) !important;
+    border-radius: 4px !important;
+    color: var(--text) !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 13px !important;
+    letter-spacing: 0.3px !important;
+    transition: border-color 0.15s ease !important;
 }
 [data-testid="stTextInput"] input:focus {
-    border-color: #f97316 !important;
-    box-shadow: none !important;
+    border-color: var(--orange) !important;
+    box-shadow: 0 0 0 2px var(--orange-dim) !important;
+    outline: none !important;
 }
 [data-testid="stTextInput"] label {
-    color: #888 !important;
-    font-size: 12px !important;
-    font-weight: 500 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.5px !important;
-}
-[data-testid="stFileUploader"] {
-    background: #1a1a1a !important;
-    border: 1px dashed #2e2e2e !important;
-    border-radius: 6px !important;
-}
-[data-testid="stFileUploader"] * { color: #888 !important; }
-[data-testid="stFileUploaderDropzone"] { background: #1a1a1a !important; }
-
-.stDownloadButton > button {
-    background-color: #f97316 !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 6px !important;
+    color: var(--muted) !important;
+    font-size: 10px !important;
     font-weight: 600 !important;
-    font-size: 14px !important;
-    padding: 10px 20px !important;
-    width: 100% !important;
-    margin-top: 4px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
 }
-.stDownloadButton > button:hover { background-color: #ea6c0a !important; }
 
-.stButton > button {
-    background-color: #1a1a1a !important;
-    color: #f0f0f0 !important;
-    border: 1px solid #2e2e2e !important;
-    border-radius: 6px !important;
+/* File uploader */
+[data-testid="stFileUploader"] {
+    background: var(--surface) !important;
+    border: 1px dashed var(--border-bright) !important;
+    border-radius: 4px !important;
+    transition: border-color 0.15s ease !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: var(--orange) !important;
+}
+[data-testid="stFileUploader"] * { color: var(--muted) !important; }
+[data-testid="stFileUploaderDropzone"] { background: var(--surface) !important; }
+
+/* Buttons - download */
+.stDownloadButton > button {
+    background-color: var(--orange) !important;
+    color: #000 !important;
+    border: none !important;
+    border-radius: 4px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
     font-weight: 500 !important;
-    font-size: 14px !important;
+    font-size: 12px !important;
+    letter-spacing: 0.5px !important;
     padding: 10px 20px !important;
     width: 100% !important;
     margin-top: 4px !important;
+    transition: background-color 0.15s ease !important;
+}
+.stDownloadButton > button:hover {
+    background-color: #ea6c0a !important;
+}
+
+/* Buttons - action */
+.stButton > button {
+    background-color: transparent !important;
+    color: var(--orange) !important;
+    border: 1px solid var(--orange) !important;
+    border-radius: 4px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-weight: 500 !important;
+    font-size: 12px !important;
+    letter-spacing: 0.5px !important;
+    padding: 10px 20px !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+    transition: all 0.15s ease !important;
 }
 .stButton > button:hover {
-    border-color: #f97316 !important;
-    color: #f97316 !important;
+    background-color: var(--orange-dim) !important;
 }
 
+/* Alerts */
 [data-testid="stAlert"] {
-    background-color: #1a1a1a !important;
-    border-radius: 6px !important;
-    border: 1px solid #2e2e2e !important;
-    color: #aaa !important;
+    background-color: var(--surface) !important;
+    border-radius: 4px !important;
+    border: 1px solid var(--border-bright) !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 12px !important;
 }
-hr { border-color: #1e1e1e !important; }
 
+/* Expander */
+[data-testid="stExpander"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 4px !important;
+}
+[data-testid="stExpander"] summary {
+    color: var(--muted) !important;
+    font-size: 12px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 4px !important;
+}
+
+/* Divider */
+hr { border-color: var(--border) !important; margin: 24px 0 !important; }
+
+/* Step badge */
 .step-badge {
-    display: inline-block;
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
-    border-radius: 20px;
-    padding: 3px 12px;
-    font-size: 11px;
-    color: #555;
-    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border-bright);
+    border-radius: 2px;
+    padding: 4px 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
+    letter-spacing: 1px;
+    margin-bottom: 14px;
 }
 .step-badge.active {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--orange);
+    color: var(--orange);
+    background: var(--orange-dim);
 }
 .step-badge.done {
-    border-color: #22c55e;
-    color: #22c55e;
+    border-color: #1a3a25;
+    color: var(--green);
+    background: rgba(34,197,94,0.05);
 }
 
+/* Stat */
 .stat { margin-bottom: 20px; }
-.stat-num { font-size: 32px; font-weight: 700; color: #f97316; line-height: 1; }
-.stat-label { font-size: 12px; color: #555; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-.file-row {
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
-    border-radius: 6px;
-    padding: 10px 14px;
-    margin-bottom: 6px;
-    font-size: 13px;
-    color: #888;
+.stat-num {
+    font-family: 'Syne', sans-serif;
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--orange);
+    line-height: 1;
+    letter-spacing: -1px;
+}
+.stat-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
 }
 
-.excluded-row {
-    background: #1a1a1a;
-    border: 1px solid #2e2e2e;
-    border-radius: 6px;
-    padding: 10px 14px;
-    margin-bottom: 6px;
-    font-size: 13px;
-    color: #888;
+/* File / excluded rows */
+.file-row, .excluded-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 9px 14px;
+    margin-bottom: 5px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* Fixed navbar */
+.navbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 9999;
+    background: rgba(8,8,8,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.navbar-right {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+}
+
+/* Fixed footer */
+.site-footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 9999;
+    background: rgba(8,8,8,0.92);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 0 32px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.site-footer span {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+}
+.site-footer .author {
+    color: var(--orange);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -326,28 +464,52 @@ if 'validated_rows' not in st.session_state:
     st.session_state.validated_rows = None
 if 'property_name' not in st.session_state:
     st.session_state.property_name = ''
+if 'step1_stats' not in st.session_state:
+    st.session_state.step1_stats = None
+if 'step2_stats' not in st.session_state:
+    st.session_state.step2_stats = None
 
 
 # --- Header ---
 st.markdown(f"""
-<div style='display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; padding-bottom:16px; border-bottom:1px solid #1e1e1e;'>
-    <img src='data:image/png;base64,{LOGO_B64}' style='height:40px;'>
-    <p style='color:#333; font-size:12px; margin:0;'>Air Filter Fulfillment Tool</p>
+<div class='navbar'>
+    <img src='data:image/png;base64,{LOGO_B64}' style='height:32px;'>
+    <span class='navbar-right'>AIR FILTER FULFILLMENT</span>
 </div>
 """, unsafe_allow_html=True)
+
+st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 
 # ── STEP 1 ──────────────────────────────────────────────────────────────
 
 step1_done = st.session_state.step >= 2
-st.markdown(f'<div class="step-badge {"done" if step1_done else "active"}">{"✓ " if step1_done else ""}Step 1 — Convert Report</div>', unsafe_allow_html=True)
 
-if st.session_state.step == 1:
+# Collapsed mini bar when done
+if step1_done:
+    col_a, col_b, col_c = st.columns([6, 2, 2])
+    with col_a:
+        s = st.session_state.step1_stats or {}
+        st.markdown(f"""
+        <div style='display:flex; align-items:center; gap:16px; padding:10px 0; border-bottom:1px solid #1f1f1f; margin-bottom:20px;'>
+            <span style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#f97316; letter-spacing:1px; text-transform:uppercase;'>✓ Step 1</span>
+            <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555;'>{s.get('property','—')}</span>
+            <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555;'>{s.get('total',0)} rows</span>
+            <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:{("#22c55e" if s.get("coverage",0) >= 80 else "#eab308" if s.get("coverage",0) >= 50 else "#ef4444")};'>{s.get("coverage",0)}% filter coverage</span>
+            <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555;'>{s.get("email_pct",0)}% email</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_c:
+        if st.button("← Edit Step 1", key="back1"):
+            st.session_state.step = 1
+            st.rerun()
+else:
+    st.markdown('<div class="step-badge active">Step 1 — Convert Report</div>', unsafe_allow_html=True)
+
     uploaded_files = st.file_uploader("Upload Beagle xlsx", type=["xlsx"], accept_multiple_files=True)
 
     property_name = None
     if uploaded_files:
-        # Auto-detect property name from filename
         detected = None
         for uf in uploaded_files:
             detected = extract_property_from_filename(uf.name)
@@ -380,12 +542,13 @@ if st.session_state.step == 1:
         if all_rows:
             st.markdown("<hr>", unsafe_allow_html=True)
 
-            # --- Top stats ---
             total_rows = len(all_rows)
             rows_with_filter = sum(1 for r in all_rows if r.get('Custom Field 1','').strip())
             rows_with_email = sum(1 for r in all_rows if r.get('Tenant Email','').strip())
             coverage_pct = int((rows_with_filter / total_rows) * 100) if total_rows else 0
+            email_pct = int((rows_with_email / total_rows) * 100) if total_rows else 0
 
+            # Stats row
             cols = st.columns(4)
             with cols[0]:
                 st.markdown(f'<div class="stat"><div class="stat-num">{total_rows}</div><div class="stat-label">Total Rows</div></div>', unsafe_allow_html=True)
@@ -393,26 +556,21 @@ if st.session_state.step == 1:
                 st.markdown(f'<div class="stat"><div class="stat-num">{len(file_results)}</div><div class="stat-label">Files</div></div>', unsafe_allow_html=True)
             with cols[2]:
                 color = "#22c55e" if coverage_pct >= 80 else "#eab308" if coverage_pct >= 50 else "#ef4444"
-                st.markdown(f'<div class="stat"><div class="stat-num" style="color:{color}">{coverage_pct}%</div><div class="stat-label">Filter Size Coverage</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:{color}">{coverage_pct}%</div><div class="stat-label">Filter Coverage</div></div>', unsafe_allow_html=True)
             with cols[3]:
-                email_pct = int((rows_with_email / total_rows) * 100) if total_rows else 0
                 st.markdown(f'<div class="stat"><div class="stat-num">{email_pct}%</div><div class="stat-label">Email Coverage</div></div>', unsafe_allow_html=True)
 
-            # --- Per-property breakdown ---
             if len(file_results) > 1:
                 for fname, count in file_results:
                     st.markdown(f'<div class="file-row">📄 {fname} <span style="color:#f97316">→ {count} rows</span></div>', unsafe_allow_html=True)
 
-            # --- Filter size coverage warning ---
             if coverage_pct < 80:
-                st.markdown(f"<p style='color:#eab308; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents are missing a filter size — consider following up before shipping.</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='color:#eab308; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents missing a filter size — follow up before shipping.</p>", unsafe_allow_html=True)
 
-            # --- Missing email warning ---
             missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
             if missing_emails:
-                st.markdown(f"<p style='color:#555; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — they will still be included.</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='color:#444; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — will still be included.</p>", unsafe_allow_html=True)
 
-            # --- Preview table ---
             with st.expander(f"Preview {total_rows} rows"):
                 preview_data = [{
                     'Name': r['Recipient Name'],
@@ -425,10 +583,9 @@ if st.session_state.step == 1:
                 st.dataframe(preview_data, use_container_width=True, hide_index=True)
 
             st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
-            # Accumulate into master CSV stored in session
+
             if 'master_rows' not in st.session_state:
                 st.session_state.master_rows = []
-            # Add rows not already in master (by address+name key)
             existing_keys = {(r['Recipient Name'], r['Address']) for r in st.session_state.master_rows}
             new_to_master = [r for r in all_rows if (r['Recipient Name'], r['Address']) not in existing_keys]
             st.session_state.master_rows.extend(new_to_master)
@@ -446,63 +603,88 @@ if st.session_state.step == 1:
                 if st.button("Validate Shipments →"):
                     st.session_state.normalized_rows = all_rows
                     st.session_state.property_name = property_name
+                    st.session_state.step1_stats = {
+                        'property': property_name,
+                        'total': total_rows,
+                        'coverage': coverage_pct,
+                        'email_pct': email_pct,
+                        'files': len(file_results),
+                    }
                     st.session_state.step = 2
                     st.rerun()
 
     elif uploaded_files and not property_name:
         st.warning("Enter a property name to continue.")
 
-else:
-    # Collapsed summary
-    st.markdown(f"<p style='color:#555; font-size:13px; margin-top:-4px;'>{st.session_state.property_name} · {len(st.session_state.normalized_rows)} rows converted</p>", unsafe_allow_html=True)
-
-
 # ── STEP 2 ──────────────────────────────────────────────────────────────
 
 if st.session_state.step >= 2:
-    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-    st.markdown('<div class="step-badge active">Step 2 — Validate Against Shipments</div>', unsafe_allow_html=True)
-    st.markdown("<p style='color:#555; font-size:13px; margin-top:-4px; margin-bottom:16px;'>Upload your previous shipments files. Anyone shipped in the last 90 days will be automatically excluded.</p>", unsafe_allow_html=True)
+    step2_done = st.session_state.step >= 3
 
-    st.markdown("<p style='color:#555; font-size:12px; margin-top:-8px; margin-bottom:16px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</p>", unsafe_allow_html=True)
-    recent_file = st.file_uploader("Upload Recent Shipments", type=["csv", "xlsx"], key="recent")
+    if step2_done:
+        s = st.session_state.step2_stats or {}
+        col_a, col_b, col_c = st.columns([6, 2, 2])
+        with col_a:
+            st.markdown(f"""
+            <div style='display:flex; align-items:center; gap:16px; padding:10px 0; border-bottom:1px solid #1f1f1f; margin-bottom:20px;'>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#f97316; letter-spacing:1px; text-transform:uppercase;'>✓ Step 2</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555;'>{s.get("total",0)} checked</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#22c55e;'>{s.get("new",0)} new</span>
+                <span style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#ef4444;'>{s.get("excluded",0)} excluded (already shipped)</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_c:
+            if st.button("← Edit Step 2", key="back2"):
+                st.session_state.step = 2
+                st.rerun()
+    else:
+        st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+        st.markdown('<div class="step-badge active">Step 2 — Validate Against Shipments</div>', unsafe_allow_html=True)
+        st.markdown("<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:-4px; margin-bottom:16px;'>Anyone shipped in the last 90 days is automatically excluded.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#22c55e; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</p>", unsafe_allow_html=True)
 
-    if recent_file:
-        shipped = get_baseline_addresses()
-        shipped |= get_shipped_addresses(recent_file)
-        old_file = True  # just to satisfy the condition below
+        recent_file = st.file_uploader("Upload Recent Shipments", type=["csv", "xlsx"], key="recent")
 
-        new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
+        if recent_file:
+            shipped = get_baseline_addresses()
+            shipped |= get_shipped_addresses(recent_file)
 
-        st.markdown("<hr>", unsafe_allow_html=True)
-        cols = st.columns(3)
-        with cols[0]:
-            st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
-        with cols[1]:
-            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
-        with cols[2]:
-            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
+            new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
-        if excluded:
-            with st.expander(f"See {len(excluded)} excluded addresses"):
-                for row in excluded:
-                    st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
+            cols = st.columns(3)
+            with cols[0]:
+                st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
+            with cols[1]:
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
+            with cols[2]:
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
 
-        if new_rows:
-            st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-            csv_bytes = rows_to_csv_bytes(new_rows)
-            filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
+            if excluded:
+                with st.expander(f"See {len(excluded)} excluded addresses"):
+                    for row in excluded:
+                        st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
-            with col2:
-                if st.button("Validate Charges →"):
-                    st.session_state.validated_rows = new_rows
-                    st.session_state.step = 3
-                    st.rerun()
-        else:
-            st.warning("All addresses were excluded — nothing new to ship.")
+            if new_rows:
+                st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+                csv_bytes = rows_to_csv_bytes(new_rows)
+                filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+                with col2:
+                    if st.button("Validate Charges →"):
+                        st.session_state.validated_rows = new_rows
+                        st.session_state.step2_stats = {
+                            'total': len(st.session_state.normalized_rows),
+                            'new': len(new_rows),
+                            'excluded': len(excluded),
+                        }
+                        st.session_state.step = 3
+                        st.rerun()
+            else:
+                st.warning("All addresses were excluded — nothing new to ship.")
 
 # ── STEP 3 ──────────────────────────────────────────────────────────────
 
@@ -613,7 +795,9 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
 
 # ── FOOTER ──────────────────────────────────────────────────────────────
 st.markdown("""
-<div style='margin-top:60px; padding-top:16px; border-top:1px solid #1e1e1e; text-align:center;'>
-    <p style='color:#333; font-size:12px; margin:0;'>Built by <span style='color:#f97316;'>Matthew Gamble</span></p>
+<div style='height:60px'></div>
+<div class='site-footer'>
+    <span>FILTER TOOLS v0.1</span>
+    <span>Built by <span class='author'>Matthew Gamble</span></span>
 </div>
 """, unsafe_allow_html=True)
