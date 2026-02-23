@@ -116,6 +116,25 @@ html, body { overflow-x: hidden !important; max-width: 100vw !important; }
 [data-testid="stFileUploaderDropzone"] { background: var(--surface) !important; }
 
 /* Buttons - download */
+/* Footer action buttons */
+.site-footer ~ div .stButton > button,
+[data-testid="stHorizontalBlock"] .stButton > button {
+    background: transparent !important;
+    border: none !important;
+    color: #7a3a10 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+    padding: 2px 0 !important;
+    width: auto !important;
+    letter-spacing: 0.5px !important;
+    transition: color 0.15s ease !important;
+}
+[data-testid="stHorizontalBlock"] .stButton > button:hover {
+    color: #f97316 !important;
+    background: transparent !important;
+    border: none !important;
+}
+
 .stDownloadButton > button {
     background-color: var(--orange) !important;
     color: #000 !important;
@@ -674,100 +693,6 @@ if 1 <= t_step <= len(TUTORIAL_STEPS):
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 
-# Start Over in sidebar — completely out of main flow
-with st.sidebar:
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #080808 !important;
-        border-right: 1px solid #141414 !important;
-        min-width: 140px !important;
-        max-width: 140px !important;
-        min-height: 100vh !important;
-        display: block !important;
-    }
-    [data-testid="stSidebar"] > div { padding: 80px 16px 16px !important; min-height: 100vh !important; }
-    [data-testid="stSidebar"] * { font-family: 'IBM Plex Mono', monospace !important; }
-    /* Hide the collapse arrow button */
-    [data-testid="collapsedControl"] { display: none !important; }
-    button[kind="header"] { display: none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown("""
-    <style>
-    [data-testid="stSidebar"] .stButton > button {
-        background: transparent !important;
-        border: none !important;
-        color: #7a3a10 !important;
-        font-family: 'IBM Plex Mono', monospace !important;
-        font-size: 11px !important;
-        padding: 4px 0 !important;
-        text-align: left !important;
-        width: auto !important;
-        letter-spacing: 0.5px !important;
-        margin: 0 !important;
-        transition: color 0.15s ease !important;
-    }
-    [data-testid="stSidebar"] .stButton > button:hover {
-        color: #f97316 !important;
-        background: transparent !important;
-        border: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Fixed label — keeps sidebar stable
-    st.markdown("<p style='color:#1e1e1e; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:20px;'>Session</p>", unsafe_allow_html=True)
-
-    # Session info
-    if st.session_state.get('property_name'):
-        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Property</p>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:11px; word-break:break-word; margin-bottom:12px;'>{st.session_state.property_name}</p>", unsafe_allow_html=True)
-
-    if st.session_state.get('step',1) > 1:
-        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Progress</p>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>Step {st.session_state.get('step',1)} of 3</p>", unsafe_allow_html=True)
-
-    if st.session_state.get('master_rows'):
-        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Master</p>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>{len(st.session_state.master_rows)} rows</p>", unsafe_allow_html=True)
-
-    if st.button("tutorial", key="show_tutorial"):
-        st.session_state.tutorial_step = 1
-        st.rerun()
-    if st.button("restart", key="start_over"):
-        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
-
-st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-# Step progress indicator
-_step = st.session_state.get('step', 1)
-def _step_style(n):
-    if n < _step: return "color:#22c55e; border-color:#1a3a25; background:rgba(34,197,94,0.05);"
-    if n == _step: return "color:#f97316; border-color:#f97316; background:rgba(249,115,22,0.08);"
-    return "color:#2a2a2a; border-color:#1f1f1f; background:transparent;"
-def _step_label(n):
-    labels = {1:"Convert", 2:"Validate Shipments", 3:"Validate Charges"}
-    return labels[n]
-
-st.markdown(f"""
-<div style='display:flex; align-items:center; gap:0; margin-bottom:28px;'>
-    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(1)}'>
-        <span>01</span><span>{_step_label(1)}</span>
-    </div>
-    <div style='width:24px; height:1px; background:#1f1f1f;'></div>
-    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(2)}'>
-        <span>02</span><span>{_step_label(2)}</span>
-    </div>
-    <div style='width:24px; height:1px; background:#1f1f1f;'></div>
-    <div style='display:flex; align-items:center; gap:8px; padding:6px 14px; border:1px solid; border-radius:2px; font-family:IBM Plex Mono,monospace; font-size:11px; {_step_style(3)}'>
-        <span>03</span><span>{_step_label(3)}</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
 
 
 # ── STEP 1 ──────────────────────────────────────────────────────────────
@@ -1129,10 +1054,29 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
     st.markdown("<p style='color:#333; font-size:12px; margin-top:8px;'>Upload a charge detail in Step 3 to further filter by paying tenants.</p>", unsafe_allow_html=True)
 
 # ── FOOTER ──────────────────────────────────────────────────────────────
-st.markdown("""
+master_count = len(st.session_state.get('master_rows', []))
+master_txt = f" · {master_count} in master" if master_count else ""
+
+footer_left = f"FILTER TOOLS v0.1{master_txt}"
+
+st.markdown(f"""
 <div style='height:60px'></div>
 <div class='site-footer'>
-    <span>FILTER TOOLS v0.1</span>
-    <span>Built by <span class='author'>Matthew Gamble</span></span>
+    <span>{footer_left}</span>
+    <span style='display:flex; align-items:center; gap:20px;'>
+        <span class='footer-link' id='tut-link'>Built by <span class='author'>Matthew Gamble</span></span>
+    </span>
 </div>
 """, unsafe_allow_html=True)
+
+foot_col1, foot_col2, foot_col3 = st.columns([6, 1, 1])
+with foot_col2:
+    if st.button("tutorial", key="show_tutorial"):
+        st.session_state.tutorial_step = 1
+        st.rerun()
+with foot_col3:
+    if st.button("restart", key="start_over"):
+        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
