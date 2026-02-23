@@ -675,29 +675,59 @@ with st.sidebar:
     <style>
     [data-testid="stSidebar"] {
         background-color: #080808 !important;
-        border-right: 1px solid #1f1f1f !important;
-        min-width: 160px !important;
-        max-width: 160px !important;
+        border-right: 1px solid #141414 !important;
+        min-width: 140px !important;
+        max-width: 140px !important;
     }
+    [data-testid="stSidebar"] > div { padding: 80px 16px 16px !important; }
     [data-testid="stSidebar"] * { font-family: 'IBM Plex Mono', monospace !important; }
     </style>
     """, unsafe_allow_html=True)
-    st.markdown("<p style='color:#333; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px;'>Session</p>", unsafe_allow_html=True)
-    if st.button("? Tutorial", key="show_tutorial"):
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"] .stButton > button {
+        background: transparent !important;
+        border: none !important;
+        color: #333 !important;
+        font-family: 'IBM Plex Mono', monospace !important;
+        font-size: 11px !important;
+        padding: 4px 0 !important;
+        text-align: left !important;
+        width: auto !important;
+        letter-spacing: 0.5px !important;
+        margin: 0 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        color: #f97316 !important;
+        background: transparent !important;
+        border: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Session info
+    if st.session_state.get('property_name'):
+        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Property</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:11px; word-break:break-word; margin-bottom:12px;'>{st.session_state.property_name}</p>", unsafe_allow_html=True)
+
+    if st.session_state.get('step',1) > 1:
+        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Progress</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>Step {st.session_state.get('step',1)} of 3</p>", unsafe_allow_html=True)
+
+    if st.session_state.get('master_rows'):
+        st.markdown(f"<p style='color:#2a2a2a; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;'>Master</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>{len(st.session_state.master_rows)} rows</p>", unsafe_allow_html=True)
+
+    st.markdown("<div style='border-top:1px solid #1a1a1a; margin:12px 0 12px;'></div>", unsafe_allow_html=True)
+
+    if st.button("tutorial", key="show_tutorial"):
         st.session_state.tutorial_step = 1
         st.rerun()
-    st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
-    if st.button("↺ Restart", key="start_over"):
+    if st.button("restart", key="start_over"):
         for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
-    if st.session_state.get('step',1) > 1:
-        st.markdown(f"<p style='color:#333; font-size:10px; margin-top:16px;'>Step {st.session_state.get('step',1)} of 3</p>", unsafe_allow_html=True)
-    if st.session_state.get('property_name'):
-        st.markdown(f"<p style='color:#444; font-size:10px; margin-top:8px; word-break:break-word;'>{st.session_state.property_name}</p>", unsafe_allow_html=True)
-    if st.session_state.get('master_rows'):
-        st.markdown(f"<p style='color:#f97316; font-size:10px; margin-top:8px;'>{len(st.session_state.master_rows)} in master</p>", unsafe_allow_html=True)
 
 st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
