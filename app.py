@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import openpyxl
 import csv
 import re
@@ -782,20 +783,39 @@ else:
 
     uploaded_files = st.file_uploader("Upload Beagle xlsx", type=["xlsx"], accept_multiple_files=True)
 
+    file_property_map = {}
+    all_confirmed = False
     property_name = None
+
     if uploaded_files:
-        detected = None
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+        all_names_filled = True
+
         for uf in uploaded_files:
             detected = extract_property_from_filename(uf.name)
-            if detected:
-                break
+            col_a, col_b = st.columns([2, 2])
+            with col_a:
+                st.markdown(f"<p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555; margin-top:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>📄 {uf.name}</p>", unsafe_allow_html=True)
+            with col_b:
+                hint_color = "#555" if detected else "#f97316"
+                hint = "✓ Detected — verify" if detected else "⚠ Enter property name"
+                st.markdown(f"<p style='font-family:IBM Plex Mono,monospace; font-size:10px; color:{hint_color}; margin-bottom:2px;'>{hint}</p>", unsafe_allow_html=True)
+                prop = st.text_input(
+                    label="prop",
+                    value=detected or "",
+                    placeholder="e.g. Freedom House",
+                    label_visibility="collapsed",
+                    key=f"prop_input_{uf.name}"
+                )
+                file_property_map[uf.name] = prop.strip()
+                if not prop.strip():
+                    all_names_filled = False
 
-        if detected:
-            st.markdown(f"<p style='color:#555; font-size:12px; margin-top:12px; margin-bottom:4px;'>✓ Detected from filename — verify or edit below</p>", unsafe_allow_html=True)
-            property_name = st.text_input("Property Name", value=detected, placeholder="e.g. Freedom House")
-        else:
-            st.markdown("<p style='color:#f97316; font-size:12px; margin-top:12px; margin-bottom:4px;'>⚠️ Couldn't detect property name — please type it below</p>", unsafe_allow_html=True)
-            property_name = st.text_input("Property Name", value="", placeholder="e.g. Freedom House")
+        if not all_names_filled:
+            st.markdown("<p style='color:#f97316; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ Enter a property name for each file to continue.</p>", unsafe_allow_html=True)
+
+        all_confirmed = all_names_filled
+        property_name = next(iter(file_property_map.values()), None)
 
     # If we already have data from a previous run, show a continue option
     if not uploaded_files and st.session_state.normalized_rows:
@@ -804,19 +824,61 @@ else:
             st.session_state.step = 2
             st.rerun()
 
-    if uploaded_files and property_name:
+    if uploaded_files and property_name and all_confirmed:
         all_rows = []
         file_results = []
         errors = []
 
-        with st.spinner("Processing files..."):
+        # Show beagle loading screen
+        loading_placeholder = st.empty()
+        loading_placeholder.markdown("""
+        <style>
+        @keyframes dogRun { 0% { left: -70px; } 100% { left: 320px; } }
+        @keyframes wag { 0%,100% { transform: rotate(-20deg); } 50% { transform: rotate(20deg); } }
+        @keyframes fadeLabel { 0%,100% { opacity:0.3; } 50% { opacity:1; } }
+        .ls-wrap { position:fixed; inset:0; background:#080808; z-index:99997; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; }
+        .ls-scene { position:relative; width:320px; height:80px; border-bottom: 1px solid #1a1a1a; }
+        .ls-dog { position:absolute; bottom:0; animation: dogRun 2s linear infinite; }
+        .ls-tail { transform-origin: 2px 4px; animation: wag 0.3s ease-in-out infinite; }
+        .ls-stick { position:absolute; bottom:14px; right:30px; width:32px; height:5px; background:#f97316; border-radius:3px; transform:rotate(-25deg); }
+        .ls-label { font-family:'IBM Plex Mono',monospace; font-size:11px; color:#555; text-transform:uppercase; letter-spacing:2px; animation: fadeLabel 1.5s ease-in-out infinite; }
+        </style>
+        <div class='ls-wrap'>
+            <div class='ls-scene'>
+                <div class='ls-stick'></div>
+                <div class='ls-dog'>
+                    <svg width="58" height="52" viewBox="0 0 58 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <ellipse cx="29" cy="34" rx="17" ry="10" fill="#f97316"/>
+                      <ellipse cx="46" cy="24" rx="10" ry="9" fill="#f97316"/>
+                      <ellipse cx="52" cy="17" rx="5" ry="7" fill="#c45c0a" transform="rotate(15 52 17)"/>
+                      <circle cx="49" cy="21" r="2" fill="#080808"/>
+                      <circle cx="50" cy="20" r="0.7" fill="white"/>
+                      <ellipse cx="55" cy="26" rx="2.5" ry="1.5" fill="#1a0a00"/>
+                      <g class="ls-tail"><path d="M13 30 Q3 18 7 10" stroke="#f97316" stroke-width="4" stroke-linecap="round" fill="none"/></g>
+                      <rect x="17" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
+                      <rect x="25" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
+                      <rect x="33" y="40" width="5" height="11" rx="2" fill="#c45c0a"/>
+                      <rect x="41" y="40" width="5" height="9" rx="2" fill="#c45c0a"/>
+                    </svg>
+                </div>
+            </div>
+            <div class='ls-label'>Fetching your data...</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        import time
+        time.sleep(0.8)
+
+        loading_placeholder.empty()
+
+        with st.spinner(""):
             for f in uploaded_files:
                 try:
-                    # Validate file is actually an xlsx
                     if not f.name.lower().endswith('.xlsx'):
                         errors.append((f.name, "File must be a .xlsx Excel file"))
                         continue
-                    rows = parse_beagle_xlsx(f, property_name)
+                    file_prop = file_property_map.get(f.name, property_name)
+                    rows = parse_beagle_xlsx(f, file_prop)
                     if not rows:
                         errors.append((f.name, "No valid rows found — check the file format matches the Beagle report template"))
                         continue
@@ -1112,6 +1174,94 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
         st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{total_after_shipment}</div><div class="stat-label">Ready to Ship</div></div>', unsafe_allow_html=True)
 
     st.markdown("<p style='color:#333; font-size:12px; margin-top:8px;'>Upload a charge detail in Step 3 to further filter by paying tenants.</p>", unsafe_allow_html=True)
+
+# ── EASTER EGG GAME ──────────────────────────────────────────────────────
+st.markdown("<p style='color:#1e1e1e; font-family:IBM Plex Mono,monospace; font-size:10px; cursor:default; margin-top:40px; margin-bottom:4px; user-select:none;'>game</p>", unsafe_allow_html=True)
+
+GAME_HTML = (
+    "<style>"
+    "body{margin:0;background:#0d0d0d;display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;font-family:monospace;}"
+    "#gc{display:block;}"
+    "#gmsg{color:#2a2a2a;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-top:8px;}"
+    "#gsc{color:#2a2a2a;font-size:10px;letter-spacing:1px;position:absolute;top:8px;right:12px;}"
+    "</style>"
+    "<div style='position:relative;display:flex;flex-direction:column;align-items:center;'>"
+    "<div id='gsc'>0</div>"
+    "<canvas id='gc' width='600' height='110'></canvas>"
+    "<div id='gmsg'>press space or tap to start</div>"
+    "</div>"
+    "<script>"
+    "var C=document.getElementById('gc'),ctx=C.getContext('2d'),msg=document.getElementById('gmsg'),sc=document.getElementById('gsc');"
+    "var W=C.width,H=C.height,GR=H-18;"
+    "var state='idle',score=0,hi=0,speed=3.5,frame=0,obstacles=[],bone=null,boneT=180,parts=[];"
+    "var dog={x:60,y:0,vy:0,j:false,lf:0};"
+    "dog.y=GR;"
+    "var G=0.6,JP=-11;"
+    "function reset(){dog={x:60,y:GR,vy:0,j:false,lf:0};obstacles=[];bone=null;boneT=180;score=0;speed=3.5;frame=0;parts=[];state='running';msg.style.color='transparent';}"
+    "function jump(){if(state==='idle'||state==='dead'){reset();return;}if(!dog.j){dog.vy=JP;dog.j=true;}}"
+    "document.addEventListener('keydown',function(e){if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();jump();}});"
+    "C.addEventListener('click',jump);"
+    "function spawnObs(){var h=18+Math.floor(Math.random()*3)*8,w=14+Math.floor(Math.random()*2)*6;obstacles.push({x:W+10,y:GR-h+4,w:w,h:h});}"
+    "function drawDog(x,y,lf,dead){"
+    "ctx.fillStyle='rgba(249,115,22,0.08)';ctx.beginPath();ctx.ellipse(x+4,GR+2,14,3,0,0,Math.PI*2);ctx.fill();"
+    "ctx.save();ctx.translate(x-10,y+2);ctx.rotate(dead?0.3:Math.sin(frame*0.3)*0.4-0.3);"
+    "ctx.strokeStyle='#f97316';ctx.lineWidth=3;ctx.lineCap='round';"
+    "ctx.beginPath();ctx.moveTo(0,0);ctx.quadraticCurveTo(-8,-10,-4,-18);ctx.stroke();ctx.restore();"
+    "ctx.fillStyle='#f97316';ctx.beginPath();ctx.ellipse(x+4,y+6,16,9,dead?0.3:0,0,Math.PI*2);ctx.fill();"
+    "ctx.fillStyle='#f97316';ctx.beginPath();ctx.ellipse(x+19,y-2,10,9,0,0,Math.PI*2);ctx.fill();"
+    "ctx.fillStyle='#c45c0a';ctx.beginPath();ctx.ellipse(x+24,y-9,5,7,0.3,0,Math.PI*2);ctx.fill();"
+    "if(!dead){ctx.fillStyle='#0d0d0d';ctx.beginPath();ctx.arc(x+23,y-3,2,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(x+24,y-4,0.8,0,Math.PI*2);ctx.fill();}"
+    "else{ctx.strokeStyle='#0d0d0d';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x+21,y-5);ctx.lineTo(x+25,y-1);ctx.moveTo(x+25,y-5);ctx.lineTo(x+21,y-1);ctx.stroke();}"
+    "ctx.fillStyle='#1a0000';ctx.beginPath();ctx.ellipse(x+28,y,2.5,1.5,0,0,Math.PI*2);ctx.fill();"
+    "var angs=dead?[0.3,0.3,0.3,0.3]:[Math.sin(lf)*0.5,-Math.sin(lf)*0.5,Math.sin(lf+1)*0.5,-Math.sin(lf+1)*0.5];"
+    "var lx=[x-4,x+2,x+8,x+14];"
+    "angs.forEach(function(a,i){ctx.save();ctx.translate(lx[i],y+12);ctx.rotate(a);ctx.fillStyle='#c45c0a';ctx.beginPath();ctx.roundRect(-2.5,0,5,13,2);ctx.fill();ctx.restore();});}"
+    "function drawPaper(ob){"
+    "var sheets=Math.floor(ob.h/8);"
+    "for(var i=sheets;i>=0;i--){"
+    "var sy=ob.y+i*(ob.h/sheets)-(ob.h/sheets),sl=(i%2===0?1:-1)*1.5;"
+    "ctx.fillStyle=i===0?'#252525':'#1e1e1e';ctx.strokeStyle='#2a2a2a';ctx.lineWidth=0.5;"
+    "ctx.beginPath();ctx.moveTo(ob.x+sl,sy);ctx.lineTo(ob.x+ob.w+sl,sy);ctx.lineTo(ob.x+ob.w-sl,sy+ob.h/sheets+2);ctx.lineTo(ob.x-sl,sy+ob.h/sheets+2);ctx.closePath();ctx.fill();ctx.stroke();"
+    "ctx.strokeStyle='#333';ctx.lineWidth=0.5;"
+    "for(var l=1;l<=2;l++){ctx.beginPath();ctx.moveTo(ob.x+sl+3,sy+l*(ob.h/sheets/3));ctx.lineTo(ob.x+ob.w+sl-3,sy+l*(ob.h/sheets/3));ctx.stroke();}}}"
+    "function drawBone(b){"
+    "ctx.fillStyle='#f97316';ctx.fillRect(b.x-8,b.y-2,16,4);"
+    "[[b.x-8,b.y],[b.x+8,b.y]].forEach(function(p){ctx.beginPath();ctx.arc(p[0],p[1],5,0,Math.PI*2);ctx.fill();});"
+    "ctx.fillStyle='rgba(249,115,22,0.35)';ctx.beginPath();ctx.arc(b.x+3,b.y-5,2,0,Math.PI*2);ctx.fill();}"
+    "function pop(x,y){for(var i=0;i<10;i++){parts.push({x:x,y:y,vx:(Math.random()-0.5)*5,vy:-Math.random()*5-2,life:30,c:Math.random()>0.5?'#f97316':'#c45c0a'});}}"
+    "function hit(ob){return dog.x+26>ob.x+3&&dog.x-6<ob.x+ob.w-3&&dog.y+14>ob.y+3&&dog.y-10<ob.y+ob.h;}"
+    "function loop(){"
+    "ctx.fillStyle='#0d0d0d';ctx.fillRect(0,0,W,H);"
+    "ctx.strokeStyle='#2a2a2a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,GR+4);ctx.lineTo(W,GR+4);ctx.stroke();"
+    "ctx.fillStyle='#1a1a1a';"
+    "for(var i=0;i<W;i+=30){var dx=((i-frame*speed*0.5)%W+W)%W;ctx.beginPath();ctx.arc(dx,GR+8,1,0,Math.PI*2);ctx.fill();}"
+    "if(state==='running'){"
+    "frame++;score++;"
+    "sc.textContent=Math.floor(score/5);sc.style.color='#3a3a3a';"
+    "speed=3.5+score/2000;"
+    "dog.vy+=G;dog.y+=dog.vy;"
+    "if(dog.y>=GR){dog.y=GR;dog.vy=0;dog.j=false;}"
+    "dog.lf+=dog.j?0:0.2;"
+    "if(frame%Math.max(55,90-Math.floor(score/300))===0)spawnObs();"
+    "obstacles=obstacles.filter(function(o){return o.x>-50;});"
+    "obstacles.forEach(function(o){o.x-=speed;drawPaper(o);});"
+    "boneT--;"
+    "if(boneT<=0&&!bone){bone={x:W+20,y:GR-20};boneT=400+Math.random()*400;}"
+    "if(bone){bone.x-=speed;drawBone(bone);"
+    "if(Math.abs(dog.x+10-bone.x)<18&&Math.abs(dog.y-bone.y)<20){pop(bone.x,bone.y);bone=null;score+=100;}"
+    "if(bone&&bone.x<-30)bone=null;}"
+    "parts=parts.filter(function(p){return p.life>0;});"
+    "parts.forEach(function(p){p.x+=p.vx;p.y+=p.vy;p.vy+=0.2;p.life--;ctx.fillStyle=p.c;ctx.globalAlpha=p.life/30;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;});"
+    "if(obstacles.some(hit)){state='dead';var s=Math.floor(score/5);if(s>hi)hi=s;msg.textContent='score '+s+' · best '+hi+' · space to retry';msg.style.color='#3a3a3a';}"
+    "drawDog(dog.x,dog.y,dog.lf,false);"
+    "}else if(state==='dead'){obstacles.forEach(function(o){drawPaper(o);});if(bone)drawBone(bone);drawDog(dog.x,dog.y,dog.lf,true);}"
+    "else{drawDog(dog.x,GR,frame*0.05,false);}"
+    "requestAnimationFrame(loop);}"
+    "loop();"
+    "</script>"
+)
+
+components.html(GAME_HTML, height=170)
 
 # ── FOOTER ──────────────────────────────────────────────────────────────
 master_count = len(st.session_state.get('master_rows', []))
