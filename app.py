@@ -683,9 +683,14 @@ with st.sidebar:
         border-right: 1px solid #141414 !important;
         min-width: 140px !important;
         max-width: 140px !important;
+        min-height: 100vh !important;
+        display: block !important;
     }
-    [data-testid="stSidebar"] > div { padding: 80px 16px 16px !important; }
+    [data-testid="stSidebar"] > div { padding: 80px 16px 16px !important; min-height: 100vh !important; }
     [data-testid="stSidebar"] * { font-family: 'IBM Plex Mono', monospace !important; }
+    /* Hide the collapse arrow button */
+    [data-testid="collapsedControl"] { display: none !important; }
+    button[kind="header"] { display: none !important; }
     </style>
     """, unsafe_allow_html=True)
     st.markdown("""
@@ -710,6 +715,9 @@ with st.sidebar:
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # Fixed label — keeps sidebar stable
+    st.markdown("<p style='color:#1e1e1e; font-family:IBM Plex Mono,monospace; font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:20px;'>Session</p>", unsafe_allow_html=True)
 
     # Session info
     if st.session_state.get('property_name'):
