@@ -743,6 +743,236 @@ def parse_issues_csv(file, property_override=None):
         })
     return rows_out
 
+def is_filter_size_tag(tag):
+    """Return True if a tag string contains a filter size dimension."""
+    tag = tag.strip()
+    # Matches: 16x20x1, 16-1/4x21-1/2x1, 16.25x21.5x1, 20 x 30 x 1, etc.
+    return bool(re.search(r'\d[\d./\-\s]*\s*[x×X]\s*\d[\d./\-\s]*\s*[x×X]\s*\d[\d./\-]*', tag, re.IGNORECASE))
+
+NON_FILTER_UNIT_TAGS = {
+    'lease only', 'no filter', 'wall ac', 'septic', 'hsn', 'hsn master lease',
+    'flood disclosure needed', 'missing filter size(s)', 'rented', 'vacant',
+}
+
+def extract_filter_tags(unit_tags_str):
+    """Extract only filter-size tags from a Unit Tags cell, ignoring label tags."""
+    if not unit_tags_str or not unit_tags_str.strip():
+        return []
+    filters = []
+    for tag in unit_tags_str.split(','):
+        tag = tag.strip()
+        if not tag:
+            continue
+        if tag.lower() in NON_FILTER_UNIT_TAGS:
+            continue
+        if is_filter_size_tag(tag):
+            filters.append(tag)
+        # else: ignore label-only tags like "White Cedar Community Association Inc."
+    return filters
+
+def normalize_fractional_filter(size_str):
+    """Convert fractional/decimal filter sizes to standard NxNxN format."""
+    import fractions
+    s = size_str.strip()
+    # Replace × with x
+    s = re.sub(r'[×X]', 'x', s)
+    # Normalize separators to x
+    s = re.sub(r'\s*x\s*', 'x', s, flags=re.IGNORECASE)
+    # Convert fractions like 16-1/4 → 16.25, 21-1/2 → 21.5
+    def frac_to_dec(m):
+        whole = int(m.group(1)) if m.group(1) else 0
+        num = int(m.group(2))
+        den = int(m.group(3))
+        val = whole + num/den
+        # Round to nearest .25
+        return str(round(val * 4) / 4).rstrip('0').rstrip('.')
+    s = re.sub(r'(\d+)-(\d+)/(\d+)', frac_to_dec, s)
+    # Convert decimals like 16.25 → keep as is, just clean spaces
+    s = re.sub(r'\s+', '', s)
+    return s
+
+def parse_tenant_directory_v1(file, property_override=None):
+    """Parse report_builder tenant directory format (full fields including name/email/address)."""
+    import csv, io
+    raw = file.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except Exception:
+        text = raw.decode('latin-1')
+    reader = csv.DictReader(io.StringIO(text))
+    rows_out = []
+    for row in reader:
+        status = row.get('Status', '').strip()
+        # Only include current tenants
+        if status and status not in ('Current', ''):
+            continue
+        first = row.get('First Name', '').strip()
+        last = row.get('Last Name', '').strip()
+        full_name = f"{first} {last}".strip() if (first or last) else row.get('Tenant', '').strip()
+        street1 = row.get('Unit Street Address 1', '').strip()
+        street2 = row.get('Unit Street Address 2', '').strip()
+        street = f"{street1} {street2}".strip() if street2 else street1
+        city = row.get('Unit City', '').strip()
+        state = row.get('Unit State', '').strip()
+        zipcode = row.get('Unit Zip', row.get('Zip', row.get('Postal Code', ''))).strip()
+        email = row.get('Emails', row.get('Email', '')).strip()
+        unit_tags = row.get('Unit Tags', '').strip()
+        filter_tags = extract_filter_tags(unit_tags)
+        # Normalize each filter size
+        normalized_filters = []
+        has_nonstandard = False
+        for tag in filter_tags:
+            norm = normalize_fractional_filter(tag)
+            s, is_std, _ = normalize_filter_size(norm)
+            normalized_filters.append((s, is_std))
+            if not is_std:
+                has_nonstandard = True
+        filter_str = ', '.join(f for f, _ in normalized_filters)
+        filter_count = len(normalized_filters)
+        _multi_note = ''
+        _multi_flag = False
+        if filter_count >= 4:
+            _multi_flag = True
+            _multi_note = f'{filter_count} filters requested — review before shipping'
+        elif filter_count in (2, 3):
+            _multi_note = f'{filter_count} filters'
+        prop_name = property_override or 'Tenant Directory'
+        rows_out.append({
+            'Order #': '', 'Shipping Service': '', 'Height(in)': '',
+            'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
+            'Custom Field 1': filter_str,
+            'Custom Field 2': prop_name,
+            'Recipient Name': full_name,
+            'Address': street,
+            'City': city,
+            'State': state,
+            'Postal Code': zipcode,
+            'Country Code': 'US',
+            'Tenant Email': email,
+            '_nonstandard_filter': has_nonstandard,
+            '_po_box': is_po_box(street),
+            '_multi_note': _multi_note,
+            '_multi_flag': _multi_flag,
+            '_filter_count': filter_count,
+            '_issue_note': '',
+            '_tracking': '',
+            '_source_format': 'tenant_dir_v1',
+        })
+    return rows_out
+
+def parse_tenant_directory_v2(file, property_override=None):
+    """Parse simple tenant directory format (Property field contains full address, no email)."""
+    import csv, io
+    raw = file.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except Exception:
+        text = raw.decode('latin-1')
+    reader = csv.DictReader(io.StringIO(text))
+    rows_out = []
+    seen_units = {}  # unit_code → row index, to handle multiple tenants per unit
+    for row in reader:
+        property_field = row.get('Property', '').strip()
+        unit = row.get('Unit', '').strip()
+        tenant_raw = row.get('Tenant', '').strip()
+        unit_tags = row.get('Unit Tags', '').strip()
+        tenant_tags = row.get('Tenant Tags', '').strip()
+        # Parse property field: "CODE - 1234 Street Name City, ST 78745"
+        prop_match = re.match(r'^[A-Z0-9]+ - (.+)$', property_field)
+        prop_clean = prop_match.group(1).strip() if prop_match else property_field
+        # Parse: "Street, City, ST ZIPCODE" or "Street City, ST ZIPCODE"
+        addr_match = re.match(
+            r'^(.+?),\s*([^,]+?),?\s*([A-Z]{2})\s+(\d{5})\s*$',
+            prop_clean, re.IGNORECASE
+        )
+        if addr_match:
+            street = addr_match.group(1).strip()
+            city = addr_match.group(2).strip()
+            state = addr_match.group(3).strip().upper()
+            zipcode = addr_match.group(4).strip()
+        else:
+            # Try "Street City ST ZIP" with no comma before city
+            addr_match2 = re.match(
+                r'^(.+?)\s+([A-Za-z\s]+?),\s*([A-Z]{2})\s+(\d{5})\s*$',
+                prop_clean, re.IGNORECASE
+            )
+            if addr_match2:
+                street = addr_match2.group(1).strip()
+                city = addr_match2.group(2).strip()
+                state = addr_match2.group(3).strip().upper()
+                zipcode = addr_match2.group(4).strip()
+            else:
+                street = prop_clean
+                city = ''
+                state = ''
+                zipcode = ''
+        # Reverse tenant name: "Last, First" → "First Last"
+        if ',' in tenant_raw:
+            parts = tenant_raw.split(',', 1)
+            full_name = f"{parts[1].strip()} {parts[0].strip()}"
+        else:
+            full_name = tenant_raw
+        # Parse filter sizes
+        filter_tags = extract_filter_tags(unit_tags)
+        normalized_filters = []
+        has_nonstandard = False
+        for tag in filter_tags:
+            norm = normalize_fractional_filter(tag)
+            s, is_std, _ = normalize_filter_size(norm)
+            normalized_filters.append((s, is_std))
+            if not is_std:
+                has_nonstandard = True
+        filter_str = ', '.join(f for f, _ in normalized_filters)
+        filter_count = len(normalized_filters)
+        _multi_note = ''
+        _multi_flag = False
+        if filter_count >= 4:
+            _multi_flag = True
+            _multi_note = f'{filter_count} filters requested — review before shipping'
+        elif filter_count in (2, 3):
+            _multi_note = f'{filter_count} filters'
+        prop_name = property_override or prop_clean or 'Tenant Directory'
+        rows_out.append({
+            'Order #': '', 'Shipping Service': '', 'Height(in)': '',
+            'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
+            'Custom Field 1': filter_str,
+            'Custom Field 2': prop_name,
+            'Recipient Name': full_name,
+            'Address': street,
+            'City': city,
+            'State': state,
+            'Postal Code': zipcode,
+            'Country Code': 'US',
+            'Tenant Email': '',
+            '_nonstandard_filter': has_nonstandard,
+            '_po_box': is_po_box(street),
+            '_multi_note': _multi_note,
+            '_multi_flag': _multi_flag,
+            '_filter_count': filter_count,
+            '_issue_note': '',
+            '_tracking': '',
+            '_source_format': 'tenant_dir_v2',
+        })
+    return rows_out
+
+def detect_csv_format(file):
+    """Sniff the first line of a CSV to determine which parser to use."""
+    import io
+    raw = file.read(512)
+    file.seek(0)
+    try:
+        header = raw.decode('utf-8-sig').split('\n')[0].lower()
+    except Exception:
+        header = raw.decode('latin-1').split('\n')[0].lower()
+    if 'first name' in header and 'unit street address' in header:
+        return 'tenant_dir_v1'
+    if 'property' in header and 'unit tags' in header and 'tenant tags' in header:
+        return 'tenant_dir_v2'
+    if 'property address' in header and 'pm company' in header:
+        return 'issues_csv'
+    return 'issues_csv'  # fallback
+
+
 def get_row_issues(row, dupe_indices):
     """Return list of issue strings for a single row."""
     issues = []
@@ -987,7 +1217,7 @@ if step1_done:
 else:
     st.markdown('<div class="step-badge active">Step 1 — Convert Report</div>', unsafe_allow_html=True)
 
-    uploaded_files = st.file_uploader("Upload Beagle xlsx or Issues CSV", type=["xlsx", "csv"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Beagle xlsx, Tenant Directory CSV, or Issues CSV", type=["xlsx", "csv"], accept_multiple_files=True)
 
     file_property_map = {}
     all_confirmed = False
@@ -1043,9 +1273,18 @@ else:
                         continue
                     file_prop = file_property_map.get(f.name, property_name)
                     if f.name.lower().endswith('.csv'):
-                        rows = parse_issues_csv(f, property_override=file_prop if file_prop else None)
+                        csv_fmt = detect_csv_format(f)
+                        if csv_fmt == 'tenant_dir_v1':
+                            rows = parse_tenant_directory_v1(f, property_override=file_prop if file_prop else None)
+                            fmt_label = "tenant directory (full)"
+                        elif csv_fmt == 'tenant_dir_v2':
+                            rows = parse_tenant_directory_v2(f, property_override=file_prop if file_prop else None)
+                            fmt_label = "tenant directory (simple)"
+                        else:
+                            rows = parse_issues_csv(f, property_override=file_prop if file_prop else None)
+                            fmt_label = "issues/exceptions"
                         if not rows:
-                            errors.append((f.name, "No valid rows found — check the CSV matches the issues/exceptions format"))
+                            errors.append((f.name, f"No valid rows found — detected as {fmt_label} format, check the file"))
                             continue
                     else:
                         rows = parse_beagle_xlsx(f, file_prop)
