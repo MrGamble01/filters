@@ -338,12 +338,13 @@ def parse_email_with_claude(email_text):
             max_tokens=1024,
             messages=[{
                 "role": "user",
-                "content": f"""Extract all property addresses and their HVAC filter sizes from this email.
+                "content": f"""Extract all property/delivery addresses and their HVAC filter sizes from this email.
+
 Return ONLY valid JSON in this exact format, no other text:
 {{
   "orders": [
     {{
-      "address": "full street address",
+      "address": "street address only (no city/state/zip)",
       "city": "city name or empty string",
       "state": "2-letter state code or empty string",
       "zip": "5-digit zip or empty string",
@@ -353,10 +354,13 @@ Return ONLY valid JSON in this exact format, no other text:
 }}
 
 Rules:
-- Each address gets its own entry even if in the same email
-- filters should be normalized to NxNxN format (e.g. 16x20x1)
+- Only include addresses that are explicitly described as locations needing filters — do NOT include the sender's company/office address from the email signature
+- Ignore email headers (From:, To:, Date:, Subject: lines) and forwarded-message banners
+- Each delivery address gets its own entry even if mentioned in the same sentence
+- filters must be normalized to NxNxN format (e.g. 16x20x1) — strip parentheses and spaces
 - If no filter size given for an address, use empty list
 - If city/state/zip not in email, use empty string
+- address field must contain only the street address (number + street name), not city/state/zip
 
 Email:
 {email_text}"""

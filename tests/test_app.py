@@ -465,3 +465,125 @@ class TestBaselineSnapshotLabel:
         monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
         # baseline_shipments.csv does not exist in tmp_path
         assert app._baseline_snapshot_label() == 'unknown date'
+
+
+# ── email_orders_to_rows ─────────────────────────────────────────────────────
+
+class TestEmailOrdersToRows:
+    """Tests for converting parsed order dicts into normalized row dicts."""
+
+    def test_two_addresses_two_filters_each(self):
+        orders = [
+            {'address': '1513 Willis St.', 'city': 'Richmond', 'state': 'VA',
+             'zip': '23224', 'filters': ['16x20x1', '14x24x1']},
+            {'address': '849 Bramwell Road', 'city': 'Richmond', 'state': 'VA',
+             'zip': '23225', 'filters': ['24x12x1', '14x20x1']},
+        ]
+        rows = app.email_orders_to_rows(orders, property_name='Hylton & Company')
+        assert len(rows) == 2
+
+        r0 = rows[0]
+        assert r0['Address'] == '1513 Willis St.'
+        assert r0['City'] == 'Richmond'
+        assert r0['State'] == 'VA'
+        assert r0['Postal Code'] == '23224'
+        assert r0['Custom Field 1'] == '16x20x1, 14x24x1'
+        assert r0['Custom Field 2'] == 'Hylton & Company'
+        assert r0['_multi_note'] == '2 filters'
+
+        r1 = rows[1]
+        assert r1['Address'] == '849 Bramwell Road'
+        assert r1['Custom Field 1'] == '24x12x1, 14x20x1'
+
+    def test_property_name_written_to_custom_field_2(self):
+        orders = [{'address': '100 Main St', 'city': '', 'state': '', 'zip': '',
+                   'filters': ['20x25x1']}]
+        rows = app.email_orders_to_rows(orders, property_name='Acme PM')
+        assert rows[0]['Custom Field 2'] == 'Acme PM'
+
+    def test_missing_filters_produces_empty_custom_field_1(self):
+        orders = [{'address': '5 Oak Ave', 'city': 'Richmond', 'state': 'VA',
+                   'zip': '23220', 'filters': []}]
+        rows = app.email_orders_to_rows(orders)
+        assert rows[0]['Custom Field 1'] == ''
+        assert rows[0]['_filter_count'] == 0
+
+    def test_country_code_always_us(self):
+        orders = [{'address': '1 A St', 'city': 'B', 'state': 'VA',
+                   'zip': '23000', 'filters': ['16x20x1']}]
+        rows = app.email_orders_to_rows(orders)
+        assert rows[0]['Country Code'] == 'US'
+
+    def test_four_or_more_filters_sets_multi_flag(self):
+        orders = [{'address': '2 B Rd', 'city': '', 'state': '', 'zip': '',
+                   'filters': ['16x20x1', '14x24x1', '20x25x1', '12x12x1']}]
+        rows = app.email_orders_to_rows(orders)
+        assert rows[0]['_multi_flag'] is True
+
+    def test_signature_address_not_in_orders(self):
+        """Regression: the signature address 411 Branchway Rd must not appear."""
+        # Simulates what Claude should return for the Hylton forwarded email —
+        # only the two property addresses, not the sender's company address.
+        orders = [
+            {'address': '1513 Willis St.', 'city': 'Richmond', 'state': 'VA',
+             'zip': '23224', 'filters': ['16x20x1', '14x24x1']},
+            {'address': '849 Bramwell Road', 'city': 'Richmond', 'state': 'VA',
+             'zip': '23225', 'filters': ['24x12x1', '14x20x1']},
+        ]
+        rows = app.email_orders_to_rows(orders, 'Hylton & Company')
+        addresses = [r['Address'] for r in rows]
+        assert not any('Branchway' in a for a in addresses), (
+            "Sender company address should not appear in orders"
+        )
+
+
+# ── parse_email_with_claude (mocked) ─────────────────────────────────────────
+
+class TestParseEmailWithClaude:
+    """Tests that parse_email_with_claude correctly calls the API and parses the response."""
+
+    def _make_mock_client(self, json_text, monkeypatch):
+        from unittest.mock import MagicMock
+        fake_msg = MagicMock()
+        fake_msg.content = [MagicMock(text=json_text)]
+        fake_client = MagicMock()
+        fake_client.messages.create.return_value = fake_msg
+        fake_anthropic = MagicMock()
+        fake_anthropic.Anthropic.return_value = fake_client
+        # app.anthropic is bound at import time; patch the module attribute directly
+        monkeypatch.setattr(app, 'anthropic', fake_anthropic)
+        return fake_client
+
+    def test_extracts_two_addresses_from_hylton_email(self, monkeypatch):
+        json_resp = '''{"orders":[
+            {"address":"1513 Willis St.","city":"Richmond","state":"VA","zip":"23224","filters":["16x20x1","14x24x1"]},
+            {"address":"849 Bramwell Road","city":"Richmond","state":"VA","zip":"23225","filters":["24x12x1","14x20x1"]}
+        ]}'''
+        self._make_mock_client(json_resp, monkeypatch)
+        orders, err = app.parse_email_with_claude("dummy email text")
+        assert err is None
+        assert len(orders) == 2
+        assert orders[0]['address'] == '1513 Willis St.'
+        assert orders[0]['filters'] == ['16x20x1', '14x24x1']
+        assert orders[1]['zip'] == '23225'
+
+    def test_strips_markdown_fences(self, monkeypatch):
+        json_resp = '```json\n{"orders":[]}\n```'
+        self._make_mock_client(json_resp, monkeypatch)
+        orders, err = app.parse_email_with_claude("x")
+        assert err is None
+        assert orders == []
+
+    def test_returns_error_string_on_bad_json(self, monkeypatch):
+        self._make_mock_client('not json at all', monkeypatch)
+        orders, err = app.parse_email_with_claude("x")
+        assert orders == []
+        assert err is not None
+
+    def test_prompt_mentions_signature_rule(self):
+        """The prompt must tell Claude to ignore signature/company addresses."""
+        import inspect
+        src = inspect.getsource(app.parse_email_with_claude)
+        assert 'signature' in src.lower() or 'company' in src.lower(), (
+            "Prompt must instruct Claude to skip sender company/signature addresses"
+        )
