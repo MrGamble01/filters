@@ -2000,7 +2000,7 @@ TUTORIAL_STEPS = [
     },
     {
         "title": "Step 1 — Upload your Beagle file",
-        "subtitle": "Drop it in. The property name detects itself.",
+        "subtitle": "This is the air filter response report from your PMS (Buildium, AppFolio, etc.) — pull it yourself or your PM will send it to you.",
         "demo": """
         <div style='background:#111; border:1px dashed #2a2a2a; border-radius:4px; padding:16px; margin:12px 0; text-align:center;'>
             <div style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>📄 Report_from_Beagle_air-filter-responses-<span style='color:#f97316;'>Freedom-House</span>.xlsx</div>
@@ -2016,7 +2016,7 @@ TUTORIAL_STEPS = [
     },
     {
         "title": "Step 2 — Cut anyone already shipped",
-        "subtitle": "History back to early 2024 is pre-loaded. Just add recent exports.",
+        "subtitle": "Baseline shipment history is already loaded — no file needed for that. If you want to catch very recent shipments, export a CSV from ShipStation (Shipments → Export). Otherwise just skip this step.",
         "demo": """
         <div style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#22c55e; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</div>
         <div style='background:#111; border:1px dashed #2a2a2a; border-radius:4px; padding:12px; margin-bottom:16px; font-family:IBM Plex Mono,monospace; font-size:11px; color:#444;'>📄 shipments_recent.csv — uploaded</div>
@@ -2030,7 +2030,7 @@ TUTORIAL_STEPS = [
     },
     {
         "title": "Step 3 — Confirm they're paying",
-        "subtitle": "Upload a charge detail. Non-payers get flagged, not deleted.",
+        "subtitle": "This is the Charge Detail report from your PMS (Buildium, AppFolio, etc.) — pull it yourself or ask your PM. Non-payers get flagged for review, not automatically removed.",
         "demo": """
         <div style='display:flex; gap:16px; margin-bottom:16px;'>
             <div style='text-align:center;'><div style='font-family:Syne,sans-serif; font-size:28px; font-weight:800; color:#22c55e;'>19</div><div style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#444; text-transform:uppercase;'>Approved</div></div>
@@ -2195,7 +2195,7 @@ else:
                 st.rerun()
 
     with upload_tab:
-        uploaded_files = st.file_uploader("Upload Beagle xlsx, Tenant Directory CSV, or Issues CSV", type=["xlsx", "csv"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("Upload air filter response report from your PMS (Buildium, AppFolio, etc.) — pull it yourself or ask your PM to send it. Also accepts Tenant Directory CSV or Issues CSV.", type=["xlsx", "csv"], accept_multiple_files=True)
 
     file_property_map = {}
     all_confirmed = False
@@ -2453,8 +2453,8 @@ if st.session_state.step >= 2:
         st.markdown("<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:-4px; margin-bottom:16px;'>Anyone shipped in the last 90 days is automatically excluded.</p>", unsafe_allow_html=True)
         st.markdown("<p style='color:#22c55e; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</p>", unsafe_allow_html=True)
 
-        recent_file = st.file_uploader("Upload recent shipments (optional)", type=["csv", "xlsx"], key="recent")
-        st.markdown("<p style='color:#333; font-family:IBM Plex Mono,monospace; font-size:11px; margin-top:-8px; margin-bottom:12px;'>Skip if you don't have access — baseline history will still be applied.</p>", unsafe_allow_html=True)
+        recent_file = st.file_uploader("Upload recent ShipStation export (.csv) — optional, only needed for shipments in the last few days", type=["csv", "xlsx"], key="recent")
+        st.markdown("<p style='color:#333; font-family:IBM Plex Mono,monospace; font-size:11px; margin-top:-8px; margin-bottom:12px;'>To get this file: ShipStation → Shipments → Export. Skip if you don't have ShipStation access — baseline history still applies.</p>", unsafe_allow_html=True)
 
         run_validation = recent_file is not None
         if not run_validation:
@@ -2516,9 +2516,9 @@ if st.session_state.step >= 2:
 if st.session_state.step >= 3:
     st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
     st.markdown('<div class="step-badge active">Step 3 — Charge Detail Validation</div>', unsafe_allow_html=True)
-    st.markdown("<p style='color:#555; font-size:13px; margin-top:-4px; margin-bottom:16px;'>Upload the charge detail report to confirm only paying tenants are included. Unmatched addresses will be flagged for review.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#555; font-size:13px; margin-top:-4px; margin-bottom:16px;'>Upload the Charge Detail report from your PMS (Buildium, AppFolio, etc.) — pull it yourself or ask your PM. Unmatched addresses get flagged for review, not deleted.</p>", unsafe_allow_html=True)
 
-    charge_file = st.file_uploader("Upload Charge Detail Report", type=["csv", "xlsx"], key="charge")
+    charge_file = st.file_uploader("Upload Charge Detail Report — pull from your PMS (Buildium, AppFolio, etc.) or ask your PM", type=["csv", "xlsx"], key="charge")
 
     # Always show skip option
     if st.session_state.validated_rows:
