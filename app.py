@@ -280,7 +280,7 @@ hr { border-color: var(--border) !important; margin: 24px 0 !important; }
 # --- Core logic ---
 
 STANDARD_FILTER_PATTERN = re.compile(r'^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?$', re.IGNORECASE)
-PO_BOX_PATTERN = re.compile(r'(p\.?\s*o\.?\s*box|post\s+office\s+box)', re.IGNORECASE)
+PO_BOX_PATTERN = re.compile(r'(p\.?\s*o\.?\s*box|post\s+office\s+box|pmb\s*\d*|general\s+delivery)', re.IGNORECASE)
 # Filter dash notation: 16x25x1-3 means qty 3 of 16x25x1
 FILTER_DASH_QTY_PATTERN = re.compile(r'^(.+?)-(\d+)$')
 
@@ -1346,6 +1346,7 @@ def parse_beagle_xlsx(file, property_name):
     if first_name_col is None and last_name_col is None: missing_cols.append('Name')
     if street_col is None: missing_cols.append('Street Address')
     if zip_col is None: missing_cols.append('Zip Code')
+    if not filter_size_cols: missing_cols.append('Filter Size')
     if missing_cols:
         raise ValueError(f"Could not find required columns: {', '.join(missing_cols)}. Headers found: {[h for h in headers if h]}")
 
@@ -1353,20 +1354,23 @@ def parse_beagle_xlsx(file, property_name):
     for row in rows[1:]:
         if not any(row):
             continue
-        first = str(row[first_name_col]).strip() if row[first_name_col] else ''
-        last = str(row[last_name_col]).strip() if row[last_name_col] else ''
+        def _cell(col):
+            return str(row[col]).strip() if (col is not None and row[col] is not None) else ''
+        first = _cell(first_name_col)
+        last = _cell(last_name_col)
         name = f'{first} {last}'.strip()
-        email = str(row[email_col]).strip() if row[email_col] else ''
-        address = merge_address(row[street_col], row[unit_col])
-        city = str(row[city_col]).strip() if row[city_col] else ''
-        state = str(row[state_col]).strip() if row[state_col] else ''
-        zipcode = normalize_zip(row[zip_col] if zip_col is not None else '')
+        email = _cell(email_col)
+        address = merge_address(row[street_col] if street_col is not None else '', row[unit_col] if unit_col is not None else '')
+        city = _cell(city_col)
+        state = _cell(state_col)
+        zipcode = normalize_zip(_cell(zip_col))
 
         filter_sizes = []
         for i, fs_col in enumerate(filter_size_cols):
             fs = row[fs_col]
             qty_val = row[qty_cols[i]] if i < len(qty_cols) else 1
             if fs:
+                fs = normalize_fractional_filter(str(fs))
                 normalized, is_std, dash_qty = normalize_filter_size(fs)
                 try:
                     qty = int(float(str(qty_val))) if qty_val else 1
@@ -1508,7 +1512,7 @@ def compute_quality_score(rows):
     # Duplicate addresses (worth 20 pts)
     dupes = detect_duplicates(rows)
     if dupes:
-        deduction = min(20, len(dupes) * 5)
+        deduction = min(20, max(10, len(dupes) * 5))
         score -= deduction
         issues.append(('dupe', len(dupes), f"{len(dupes)} duplicate address{'es' if len(dupes) > 1 else ''}"))
 
@@ -1554,10 +1558,15 @@ def parse_issues_csv_notes(notes_str):
         if FILTER_SIZE_PATTERN.search(size):
             s, _, _ = normalize_filter_size(size)
             return [(s, qty)]
-    # Plain: 16x20x1
-    if FILTER_SIZE_PATTERN.search(notes_str):
-        s, _, _ = normalize_filter_size(notes_str.strip())
-        return [(s, 1)]
+    # Plain: one or more bare filter sizes, possibly comma-separated (e.g. "16x20x1, 20x25x1")
+    plain_matches = list(re.finditer(r'[\d./\-]+\s*[xX\xd7]\s*[\d./\-]+\s*[xX\xd7]\s*[\d./\-]+', notes_str))
+    if plain_matches:
+        results = []
+        for m in plain_matches:
+            s, _, _ = normalize_filter_size(m.group(0).strip())
+            if s:
+                results.append((s, 1))
+        return results if results else []
     return []
 
 def parse_address_field(addr_str):
@@ -1567,15 +1576,23 @@ def parse_address_field(addr_str):
     addr_str = str(addr_str).strip()
     # Strip "Address: " prefix
     addr_str = re.sub(r'^Address:\s*', '', addr_str, flags=re.IGNORECASE)
-    # Try pattern: street, city, ST zip or street, city, ST
-    m = re.match(r'^(.+?),\s*([^,]+?),?\s*([A-Z]{2}),?\s*(\d{5}(?:-\d{4})?)?$', addr_str.strip(), re.IGNORECASE)
+    # Anchor from the right: find ", City, ST [ZIP]" at end.
+    # This preserves streets that contain commas (e.g. "Martin Luther King, Jr. Blvd").
+    m = re.search(
+        r',\s*([^,]+?),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?\s*$',
+        addr_str, re.IGNORECASE
+    )
     if m:
-        return m.group(1).strip(), m.group(2).strip(), m.group(3).strip().upper(), normalize_zip(m.group(4) or '')
-    # Try: street city ST zip (no commas)
-    m2 = re.search(r'^(.*?)\s+([A-Za-z\s]+?)\s+([A-Z]{2})\s+(\d{5})$', addr_str.strip())
+        city = m.group(1).strip()
+        state = m.group(2).strip().upper()
+        zipcode = normalize_zip(m.group(3) or '')
+        street = addr_str[:m.start()].strip().rstrip(',').strip()
+        return street, city, state, zipcode
+    # Fallback: no-comma format "123 Main St Austin TX 78701"
+    m2 = re.search(r'^(.*?)\s+([A-Za-z][A-Za-z ]{1,20}?)\s+([A-Z]{2})\s+(\d{5})\s*$', addr_str)
     if m2:
         return m2.group(1).strip(), m2.group(2).strip(), m2.group(3).upper(), m2.group(4)
-    # Just street, no city/state
+    # Just a street, no city/state parseable
     return addr_str.strip(), '', '', ''
 
 def parse_issues_csv(file, property_override=None):
@@ -1707,9 +1724,10 @@ def parse_tenant_directory_v1(file, property_override=None):
     reader = csv.DictReader(io.StringIO(text))
     rows_out = []
     for row in reader:
-        status = row.get('Status', '').strip()
-        # Only include current tenants
-        if status and status not in ('Current', ''):
+        status = row.get('Status', '').strip().lower()
+        # Exclude definitively inactive statuses; accept current/active/occupied/blank/unknown
+        _inactive = {'former', 'past', 'evicted', 'vacated', 'terminated', 'inactive', 'notice'}
+        if status and status in _inactive:
             continue
         first = row.get('First Name', '').strip()
         last = row.get('Last Name', '').strip()
@@ -1811,10 +1829,15 @@ def parse_tenant_directory_v2(file, property_override=None):
                 city = ''
                 state = ''
                 zipcode = ''
-        # Reverse tenant name: "Last, First" → "First Last"
+        # Reverse "Last, First" → "First Last" only when the pre-comma segment
+        # looks like a surname (1-2 words). Avoids reversing "First Last" format.
         if ',' in tenant_raw:
             parts = tenant_raw.split(',', 1)
-            full_name = f"{parts[1].strip()} {parts[0].strip()}"
+            before_comma = parts[0].strip()
+            if len(before_comma.split()) <= 2:
+                full_name = f"{parts[1].strip()} {before_comma}"
+            else:
+                full_name = tenant_raw  # unusual format or already First Last
         else:
             full_name = tenant_raw
         # Parse filter sizes
@@ -1919,6 +1942,11 @@ def get_baseline_addresses():
     """Load baseline shipments from the sidecar CSV next to app.py."""
     import os
     baseline_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
+    if not os.path.exists(baseline_path):
+        raise FileNotFoundError(
+            f"baseline_shipments.csv not found at {baseline_path}. "
+            "This file must exist alongside app.py. Re-clone the repo or restore it from git."
+        )
     df = pd.read_csv(baseline_path, dtype=str)
     return extract_addresses_from_df(df)
 
@@ -2534,18 +2562,20 @@ if st.session_state.step >= 3:
                     charge_file.seek(0)
                     charge_df = pd.read_csv(charge_file, dtype=str)
 
-                # Find address column
+                # Find address column — rank candidates by specificity
+                _addr_priority = ['address', 'street address', 'property address',
+                                   'ship to - address 1', 'ship to address', 'mailing address',
+                                   'unit address', 'tenant address', 'location']
+                def _addr_score(col_name):
+                    c = col_name.lower().strip()
+                    for i, kw in enumerate(_addr_priority):
+                        if c == kw: return i
+                    if 'address' in c or 'street' in c: return len(_addr_priority)
+                    return 999
                 addr_col = None
-                preferred = ['Address', 'Ship To - Address 1', 'address', 'Street Address', 'Property Address']
-                for p in preferred:
-                    if p in charge_df.columns:
-                        addr_col = p
-                        break
-                if not addr_col:
-                    for col in charge_df.columns:
-                        if 'address' in col.lower():
-                            addr_col = col
-                            break
+                candidates = sorted(charge_df.columns, key=_addr_score)
+                if candidates and _addr_score(candidates[0]) < 999:
+                    addr_col = candidates[0]
 
                 if addr_col:
                     paying_addresses = set()
@@ -2553,16 +2583,28 @@ if st.session_state.step >= 3:
                         paying_addresses.add(normalize_address_key(val))
 
                     def _fuzzy_match(key, paying_set):
-                        """Token-overlap fallback: match if all numeric tokens from key appear in any paying address."""
+                        """Token-overlap fallback for address matching.
+
+                        Handles the common case where the charge file has the base address
+                        without a unit number (e.g. '123 Oak Ln') while the order has the
+                        full address ('123 Oak Ln apt 5'). Strategy:
+                          - All digits in the charge record must appear in the order address
+                            (subset, not equality — order may have extra unit #).
+                          - At least 1 meaningful non-numeric word must also overlap.
+                        """
                         key_nums = set(re.findall(r'\d+', key))
-                        if not key_nums:
-                            return False
-                        key_words = set(key.split())
+                        key_words = set(key.split()) - {'apt', 'unit', 'ste', 'suite'}
                         for candidate in paying_set:
-                            cand_words = set(candidate.split())
-                            # All digits must match and at least one non-numeric token must overlap
                             cand_nums = set(re.findall(r'\d+', candidate))
-                            if key_nums == cand_nums and len(key_words & cand_words) >= 2:
+                            if not cand_nums or not cand_nums.issubset(key_nums):
+                                continue
+                            cand_words = set(candidate.split()) - {'apt', 'unit', 'ste', 'suite'}
+                            # Exclude pure-digit words from the meaningful overlap check
+                            # Require ≥2 overlapping non-digit words so that
+                            # '123 Main St' does NOT fuzzy-match '123 Main Ave'
+                            # (only 'main' in common — not enough).
+                            meaningful = (key_words & cand_words) - {w for w in key_words if w.isdigit()}
+                            if len(meaningful) >= 2:
                                 return True
                         return False
 
