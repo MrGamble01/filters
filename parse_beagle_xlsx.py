@@ -1,136 +1,47 @@
 """
 parse_beagle_xlsx.py
 --------------------
-Converts a Beagle air filter response report (xlsx) into the normalized
-ShipStation import format (CSV).
+CLI wrapper around the canonical Beagle xlsx parser that lives in app.py.
 
 Usage:
     python3 parse_beagle_xlsx.py <input.xlsx> <property_name> [output.csv]
 
 If no output filename is given, it defaults to <input_basename>_normalized.csv.
 
-Handles:
-- First + Last name → Recipient Name
-- Street Address + UNIT column → merged Address
-- Up to 3 filter size/quantity column pairs → comma-separated Custom Field 1
-  (qty > 1 repeats the filter size, e.g. qty 2 of 16x20x1 → "16x20x1, 16x20x1")
-- Filter size normalization (× → x, trailing dots, extra spaces)
-- Zip code cleanup (removes .0 from numeric values)
-- Country Code defaults to US
+NOTE: The authoritative implementation of parse_beagle_xlsx() and all helper
+functions (normalize_filter_size, fuzzy_col_idx, merge_address, etc.) lives in
+app.py.  This script imports directly from there so the two never diverge.
 """
 
-import openpyxl
-import csv
-import re
 import sys
 import os
+import csv
 
-OUTPUT_FIELDNAMES = [
-    'Order #', 'Shipping Service', 'Height(in)', 'Length(in)', 'Width(in)',
-    'Weight(oz)', 'Custom Field 1', 'Custom Field 2', 'Recipient Name',
-    'Address', 'City', 'State', 'Postal Code', 'Country Code', 'Tenant Email'
-]
+# Allow importing from app.py (which is Streamlit-based) without triggering the
+# Streamlit runtime.  We stub out the 'streamlit' module before the import so
+# that top-level st.* calls in app.py are silently ignored.
+import types
+_st_stub = types.ModuleType('streamlit')
+for _attr in ('set_page_config', 'markdown', 'session_state', 'columns',
+              'file_uploader', 'button', 'text_input', 'expander',
+              'download_button', 'spinner', 'warning', 'error', 'info',
+              'checkbox', 'dataframe', 'rerun', 'components'):
+    setattr(_st_stub, _attr, lambda *a, **kw: None)
+_st_stub.session_state = {}
+_st_stub.components = types.ModuleType('streamlit.components.v1')
+_st_stub.components.html = lambda *a, **kw: None
+sys.modules.setdefault('streamlit', _st_stub)
+sys.modules.setdefault('streamlit.components', _st_stub.components)
+sys.modules.setdefault('streamlit.components.v1', _st_stub.components)
 
+# Also stub anthropic and PIL if not installed (not needed for parsing)
+for _mod in ('anthropic', 'PIL', 'PIL.Image'):
+    sys.modules.setdefault(_mod, types.ModuleType(_mod))
 
-def normalize_filter_size(s):
-    """Normalize filter size string to standard NxNxN format."""
-    if not s:
-        return None
-    s = str(s).strip()
-    # Replace unicode × and any surrounding spaces with 'x'
-    s = re.sub(r'\s*[×x]\s*', 'x', s, flags=re.IGNORECASE)
-    s = s.rstrip('.')
-    return s.strip()
+_here = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _here)
 
-
-def merge_address(street, unit):
-    """Merge street address and unit into a single address string."""
-    street = str(street).strip() if street else ''
-    unit = str(unit).strip() if unit and str(unit).lower() not in ('none', '') else ''
-    if not unit:
-        return street
-    # Already contains the unit value at the end (e.g. "Apt 2", "#1", "UNIT A")
-    if re.search(r'(UNIT|APT|#)\s*' + re.escape(unit) + r'\s*$', street, re.IGNORECASE):
-        return street
-    # Street ends with bare "UNIT" keyword — just append unit value
-    if re.search(r'\bUNIT\s*$', street, re.IGNORECASE):
-        return street.rstrip() + ' ' + unit
-    return f'{street} UNIT {unit}'
-
-
-def parse_beagle_xlsx(filepath, property_name):
-    """Parse a Beagle xlsx file and return list of normalized row dicts."""
-    wb = openpyxl.load_workbook(filepath)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    headers = rows[0]
-
-    def col_idx(name):
-        for i, h in enumerate(headers):
-            if h and str(h).strip().lower() == name.lower():
-                return i
-        return None
-
-    first_name_col = col_idx('First Name')
-    last_name_col = col_idx('Last Name')
-    email_col = col_idx('Email')
-    street_col = col_idx('Street Address')
-    unit_col = col_idx('UNIT')
-    city_col = col_idx('City')
-    state_col = col_idx('State')
-    zip_col = col_idx('Zip Code')
-
-    # There can be multiple Filter Size / Quantity column pairs
-    filter_size_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() == 'filter size']
-    qty_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() == 'quantity']
-
-    output_rows = []
-    for row in rows[1:]:
-        if not any(row):
-            continue
-
-        first = str(row[first_name_col]).strip() if row[first_name_col] else ''
-        last = str(row[last_name_col]).strip() if row[last_name_col] else ''
-        name = f'{first} {last}'.strip()
-        email = str(row[email_col]).strip() if row[email_col] else ''
-        address = merge_address(row[street_col], row[unit_col])
-        city = str(row[city_col]).strip() if row[city_col] else ''
-        state = str(row[state_col]).strip() if row[state_col] else ''
-        zipcode = str(row[zip_col]).strip() if row[zip_col] else ''
-        if zipcode.endswith('.0'):
-            zipcode = zipcode[:-2]
-
-        filter_sizes = []
-        for i, fs_col in enumerate(filter_size_cols):
-            fs = row[fs_col]
-            qty_val = row[qty_cols[i]] if i < len(qty_cols) else 1
-            if fs:
-                normalized = normalize_filter_size(fs)
-                try:
-                    qty = int(float(str(qty_val))) if qty_val else 1
-                except (ValueError, TypeError):
-                    qty = 1
-                for _ in range(qty):
-                    filter_sizes.append(normalized)
-
-        if not filter_sizes:
-            continue
-
-        output_rows.append({
-            'Order #': '', 'Shipping Service': '', 'Height(in)': '',
-            'Length(in)': '', 'Width(in)': '', 'Weight(oz)': '',
-            'Custom Field 1': ', '.join(filter_sizes),
-            'Custom Field 2': property_name,
-            'Recipient Name': name,
-            'Address': address,
-            'City': city,
-            'State': state,
-            'Postal Code': zipcode,
-            'Country Code': 'US',
-            'Tenant Email': email,
-        })
-
-    return output_rows
+from app import parse_beagle_xlsx, rows_to_csv_bytes, OUTPUT_FIELDNAMES  # noqa: E402
 
 
 def main():
@@ -147,12 +58,12 @@ def main():
         base = os.path.splitext(os.path.basename(input_path))[0]
         output_path = f'{base}_normalized.csv'
 
-    rows = parse_beagle_xlsx(input_path, property_name)
+    with open(input_path, 'rb') as fh:
+        rows = parse_beagle_xlsx(fh, property_name)
 
-    with open(output_path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+    csv_bytes = rows_to_csv_bytes(rows)
+    with open(output_path, 'wb') as f:
+        f.write(csv_bytes)
 
     print(f"Done. {len(rows)} rows written to {output_path}")
 
