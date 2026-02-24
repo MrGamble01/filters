@@ -391,3 +391,77 @@ class TestLookupGrCustom:
         p.write_text("not valid json {{{")
         monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
         assert app.load_custom_gr() == {}
+
+
+# ── append_to_baseline ───────────────────────────────────────────────────────
+
+class TestAppendToBaseline:
+    _BASELINE_HEADER = (
+        'Carrier - Name,Service - Confirmation Type,Ship To - Name,'
+        'Shipment - Tracking Number,Ship To - Address 1,Ship To - City,'
+        'Ship To - Country,Ship To - Postal Code,Custom - Field 1,'
+        'Custom - Field 2,Customer - Email,Custom - Field 3\n'
+    )
+
+    def _make_baseline(self, tmp_path):
+        p = tmp_path / 'baseline_shipments.csv'
+        p.write_text(self._BASELINE_HEADER)
+        return p
+
+    def test_appends_rows_in_correct_columns(self, tmp_path, monkeypatch):
+        import csv, os
+        p = self._make_baseline(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+
+        rows = [{
+            'Recipient Name': 'Jane Doe',
+            'Address': '100 Oak St',
+            'City': 'Richmond',
+            'Postal Code': '23220',
+            'Country Code': 'US',
+            'Custom Field 1': '16x20x1',
+            'Custom Field 2': 'Acme PM',
+            'Custom Field 3': 'GR0001',
+            'Tenant Email': 'jane@example.com',
+        }]
+        app.append_to_baseline(rows)
+
+        with open(p, newline='', encoding='utf-8') as f:
+            reader = list(csv.DictReader(f))
+        assert len(reader) == 1
+        r = reader[0]
+        assert r['Ship To - Name'] == 'Jane Doe'
+        assert r['Ship To - Address 1'] == '100 Oak St'
+        assert r['Custom - Field 1'] == '16x20x1'
+        assert r['Custom - Field 3'] == 'GR0001'
+        assert r['Carrier - Name'] == 'UPS'
+
+    def test_defaults_country_to_us_when_missing(self, tmp_path, monkeypatch):
+        import csv
+        self._make_baseline(tmp_path)
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+        app.append_to_baseline([{'Recipient Name': 'X', 'Address': '1 A St', 'City': 'B',
+                                  'Postal Code': '00000', 'Country Code': ''}])
+        with open(tmp_path / 'baseline_shipments.csv', newline='', encoding='utf-8') as f:
+            reader = list(csv.DictReader(f))
+        assert reader[0]['Ship To - Country'] == 'US'
+
+
+# ── _baseline_snapshot_label ─────────────────────────────────────────────────
+
+class TestBaselineSnapshotLabel:
+    def test_returns_month_year_from_mtime(self, tmp_path, monkeypatch):
+        import os, datetime
+        p = tmp_path / 'baseline_shipments.csv'
+        p.write_text('x')
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+        label = app._baseline_snapshot_label()
+        # Should be a short month-year string like "Feb 2026"
+        assert len(label) > 0
+        assert label != 'unknown date'
+
+    def test_returns_unknown_date_when_file_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+        # baseline_shipments.csv does not exist in tmp_path
+        assert app._baseline_snapshot_label() == 'unknown date'

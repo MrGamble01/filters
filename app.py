@@ -12,7 +12,16 @@ from PIL import Image
 # Baseline ShipStation shipments file (all-time through Dec 2024) — baked in permanently
 # Baseline snapshot: ShipStation all-time history through Feb 2026, stored as sidecar CSV.
 # To update: export fresh history from ShipStation and replace baseline_shipments.csv.
-BASELINE_SNAPSHOT = "Feb 2026"
+def _baseline_snapshot_label():
+    """Return a human-readable date derived from baseline_shipments.csv mtime."""
+    import os, datetime
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
+    try:
+        return datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime('%b %Y')
+    except Exception:
+        return 'unknown date'
+
+BASELINE_SNAPSHOT = _baseline_snapshot_label()
 
 # Beagle logo as favicon
 import io as _io
@@ -1992,6 +2001,34 @@ def get_shipped_addresses(file):
         df = pd.read_csv(file, dtype=str)
     return extract_addresses_from_df(df)
 
+def append_to_baseline(rows):
+    """Append newly-shipped rows to baseline_shipments.csv in ShipStation export format."""
+    import os, csv
+    baseline_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
+    _BASELINE_COLS = [
+        'Carrier - Name', 'Service - Confirmation Type', 'Ship To - Name',
+        'Shipment - Tracking Number', 'Ship To - Address 1', 'Ship To - City',
+        'Ship To - Country', 'Ship To - Postal Code', 'Custom - Field 1',
+        'Custom - Field 2', 'Customer - Email', 'Custom - Field 3',
+    ]
+    with open(baseline_path, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=_BASELINE_COLS, extrasaction='ignore')
+        for row in rows:
+            writer.writerow({
+                'Carrier - Name': 'UPS',
+                'Service - Confirmation Type': 'None',
+                'Ship To - Name': row.get('Recipient Name', ''),
+                'Shipment - Tracking Number': '',
+                'Ship To - Address 1': row.get('Address', ''),
+                'Ship To - City': row.get('City', ''),
+                'Ship To - Country': row.get('Country Code', 'US') or 'US',
+                'Ship To - Postal Code': row.get('Postal Code', ''),
+                'Custom - Field 1': row.get('Custom Field 1', ''),
+                'Custom - Field 2': row.get('Custom Field 2', ''),
+                'Customer - Email': row.get('Tenant Email', ''),
+                'Custom - Field 3': row.get('Custom Field 3', ''),
+            })
+
 def validate_rows(normalized_rows, shipped_addresses):
     new_rows = []
     excluded = []
@@ -2763,7 +2800,58 @@ if st.session_state.step >= 3:
                     else:
                         st.warning("No approved addresses — check your charge detail report.")
                 else:
-                    st.error("Couldn't find an address column in the charge detail report. Please check the file format.")
+                    st.markdown(
+                        "<p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#eab308; margin-bottom:4px;'>⚠️ Couldn't auto-detect the address column — select it manually:</p>",
+                        unsafe_allow_html=True,
+                    )
+                    _col_options = list(charge_df.columns)
+                    _manual_col = st.selectbox(
+                        "Address column",
+                        options=[''] + _col_options,
+                        format_func=lambda x: '— select a column —' if x == '' else x,
+                        key='charge_addr_col_override',
+                        label_visibility='collapsed',
+                    )
+                    if _manual_col:
+                        addr_col = _manual_col
+                        paying_addresses = set()
+                        for val in charge_df[addr_col].dropna():
+                            paying_addresses.add(normalize_address_key(val))
+                        approved = []
+                        flagged = []
+                        for row in st.session_state.validated_rows:
+                            key = normalize_address_key(row['Address'])
+                            if key in paying_addresses or _fuzzy_match(key, paying_addresses):
+                                approved.append(row)
+                            else:
+                                flagged.append(row)
+                        # Reuse the same display block by falling through via a flag
+                        _manual_match_done = True
+                    else:
+                        _manual_match_done = False
+                    if not _manual_col:
+                        st.caption(
+                            f"Columns found: {', '.join(_col_options[:8])}"
+                            + (f" (+{len(_col_options)-8} more)" if len(_col_options) > 8 else "")
+                        )
+                    if _manual_match_done:
+                        st.markdown('<hr>', unsafe_allow_html=True)
+                        _mc = st.columns(3)
+                        with _mc[0]:
+                            st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.validated_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
+                        with _mc[1]:
+                            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(approved)}</div><div class="stat-label">Approved</div></div>', unsafe_allow_html=True)
+                        with _mc[2]:
+                            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#eab308">{len(flagged)}</div><div class="stat-label">Flagged</div></div>', unsafe_allow_html=True)
+                        if flagged:
+                            with st.expander(f'⚠️ {len(flagged)} addresses flagged for review'):
+                                for _row in flagged:
+                                    st.markdown(f'<div class="excluded-row">🟡 {_row["Recipient Name"]} — {_row["Address"]}, {_row["City"]}</div>', unsafe_allow_html=True)
+                                st.download_button('⬇️ Download Flagged List', data=rows_to_csv_bytes(flagged), file_name=f"{st.session_state.property_name.replace(' ', '_')}_flagged.csv", mime='text/csv')
+                        if approved:
+                            st.download_button('⬇️ Download Approved CSV', data=rows_to_csv_bytes(approved), file_name=f"{st.session_state.property_name.replace(' ', '_')}_approved.csv", mime='text/csv')
+                        else:
+                            st.warning('No approved addresses — check your charge detail report.')
 
             except Exception as e:
                 st.error(f"Error reading charge detail: {e}")
@@ -2805,6 +2893,30 @@ if st.session_state.step >= 3 and st.session_state.get('validated_rows'):
         st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{total_after_shipment}</div><div class="stat-label">Ready to Ship</div></div>', unsafe_allow_html=True)
 
     st.markdown("<p style='color:#333; font-size:12px; margin-top:8px;'>Upload a charge detail in Step 3 to further filter by paying tenants.</p>", unsafe_allow_html=True)
+
+    # Baseline self-update
+    if not st.session_state.get('baseline_saved'):
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#555; margin-bottom:4px;'>"
+            "Save these addresses to the baseline so they're excluded in future runs — "
+            "do this after you've shipped the order.</p>",
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            f"💾 Save {len(st.session_state.validated_rows)} addresses to baseline",
+            key='save_baseline_btn',
+        ):
+            append_to_baseline(st.session_state.validated_rows)
+            st.session_state.baseline_saved = True
+            st.rerun()
+    else:
+        st.markdown(
+            "<p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#22c55e; margin-top:12px;'>"
+            f"✓ {len(st.session_state.validated_rows)} addresses saved to baseline."
+            "</p>",
+            unsafe_allow_html=True,
+        )
 
 # ── EASTER EGG GAME ──────────────────────────────────────────────────────
 if 'show_game' not in st.session_state:
@@ -3037,7 +3149,7 @@ with fa_col2:
         st.rerun()
 with fa_col3:
     if st.button("restart", key="start_over"):
-        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows']:
+        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows','baseline_saved','charge_addr_col_override','skip_s2_confirmed','skip_charge_confirmed']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
