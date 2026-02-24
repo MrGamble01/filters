@@ -352,3 +352,42 @@ class TestTenantDirV2NameReversal:
     def test_two_word_surname_reversed(self):
         rows = app.parse_tenant_directory_v2(self._make_csv("Van Halen, Alex"))
         assert rows[0]["Recipient Name"] == "Alex Van Halen"
+
+
+# ── lookup_gr with custom overrides ─────────────────────────────────────────
+
+class TestLookupGrCustom:
+    def test_custom_override_wins_over_builtin(self, tmp_path, monkeypatch):
+        import json
+        custom = {"acme property mgmt": "GR9999"}
+        p = tmp_path / "gr_lookup_custom.json"
+        p.write_text(json.dumps(custom))
+        monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
+        assert app.lookup_gr("Acme Property Mgmt") == "GR9999"
+
+    def test_fallback_to_builtin_when_no_custom(self, tmp_path, monkeypatch):
+        p = tmp_path / "gr_lookup_custom.json"
+        # Don't create the file — should fall back to hardcoded table gracefully
+        monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
+        # Unknown company should return ''
+        assert app.lookup_gr("completely unknown company xyz") == ''
+
+    def test_save_normalises_case(self, tmp_path, monkeypatch):
+        import json
+        p = tmp_path / "gr_lookup_custom.json"
+        monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
+        app.save_custom_gr({"Acme MGMT": "gr0123"})
+        saved = json.loads(p.read_text())
+        assert "acme mgmt" in saved
+        assert saved["acme mgmt"] == "GR0123"
+
+    def test_load_returns_empty_dict_on_missing_file(self, tmp_path, monkeypatch):
+        p = tmp_path / "gr_lookup_custom.json"
+        monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
+        assert app.load_custom_gr() == {}
+
+    def test_load_returns_empty_dict_on_corrupt_file(self, tmp_path, monkeypatch):
+        p = tmp_path / "gr_lookup_custom.json"
+        p.write_text("not valid json {{{")
+        monkeypatch.setattr(app, '_custom_gr_path', lambda: str(p))
+        assert app.load_custom_gr() == {}

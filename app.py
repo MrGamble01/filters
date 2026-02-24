@@ -1297,29 +1297,60 @@ GR_LOOKUP = {
     'ziser realty & property management': 'GR0271',
 }
 
-def lookup_gr(company_name):
-    """Look up GR number for a company name. Tries exact match, then partial match."""
+def _custom_gr_path():
+    import os
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gr_lookup_custom.json')
+
+def load_custom_gr():
+    """Load editable GR overrides from gr_lookup_custom.json (empty dict if missing)."""
+    import json, os
+    path = _custom_gr_path()
+    if os.path.exists(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_custom_gr(mapping):
+    """Persist custom GR overrides to gr_lookup_custom.json (keys normalised to lower-case)."""
+    import json
+    normalised = {k.strip().lower(): v.strip().upper() for k, v in mapping.items() if k and v}
+    with open(_custom_gr_path(), 'w', encoding='utf-8') as f:
+        json.dump(normalised, f, indent=2, sort_keys=True)
+
+def lookup_gr(company_name, _custom=None):
+    """Look up GR number for a company name.
+
+    Custom overrides (gr_lookup_custom.json) take priority over the built-in
+    table so account managers can add new companies without a code change.
+    """
     if not company_name:
         return ''
     key = company_name.strip().lower()
-    # Exact match
+    custom = _custom if _custom is not None else load_custom_gr()
+    if key in custom:
+        return custom[key]
+    # Exact match in built-in table
     if key in GR_LOOKUP:
         return GR_LOOKUP[key]
     # Try stripping trailing punctuation/whitespace variants
     key_clean = re.sub(r'[\s,\.]+$', '', key)
-    if key_clean in GR_LOOKUP:
-        return GR_LOOKUP[key_clean]
-    # Partial match — key is contained in a lookup entry or vice versa
-    for lookup_key, gr in GR_LOOKUP.items():
+    if key_clean in GR_LOOKUP or key_clean in custom:
+        return GR_LOOKUP.get(key_clean) or custom.get(key_clean, '')
+    # Partial match
+    for lookup_key, gr in {**GR_LOOKUP, **custom}.items():
         if key_clean in lookup_key or lookup_key in key_clean:
             return gr
     return ''
 
 def enrich_rows_with_gr(rows):
     """Populate Custom Field 3 with GR number based on Custom Field 2 (company name)."""
+    custom = load_custom_gr()  # load once per batch
     for row in rows:
         if not row.get('Custom Field 3'):
-            row['Custom Field 3'] = lookup_gr(row.get('Custom Field 2', ''))
+            row['Custom Field 3'] = lookup_gr(row.get('Custom Field 2', ''), _custom=custom)
     return rows
 
 def parse_beagle_xlsx(file, property_name):
@@ -2127,6 +2158,53 @@ if 1 <= t_step <= len(TUTORIAL_STEPS):
 
 
 
+# ── GR LOOKUP MANAGER (sidebar) ─────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown(
+        "<p style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#f97316;"
+        " letter-spacing:1px; text-transform:uppercase; margin-bottom:12px;'>GR Lookup Manager</p>",
+        unsafe_allow_html=True,
+    )
+    _custom_gr = load_custom_gr()
+
+    with st.form("add_gr_form", clear_on_submit=True):
+        _new_company = st.text_input("Company name", placeholder="e.g. Acme Property Mgmt")
+        _new_gr = st.text_input("GR code", placeholder="e.g. GR0999")
+        _submitted = st.form_submit_button("Add / Update")
+        if _submitted:
+            if _new_company.strip() and _new_gr.strip():
+                _custom_gr[_new_company.strip().lower()] = _new_gr.strip().upper()
+                save_custom_gr(_custom_gr)
+                st.success(f"Saved: {_new_company.strip()} → {_new_gr.strip().upper()}")
+                st.rerun()
+            else:
+                st.warning("Both fields required.")
+
+    if _custom_gr:
+        st.markdown(
+            "<p style='font-family:IBM Plex Mono,monospace; font-size:10px; color:#555;"
+            " margin:8px 0 4px;'>Custom mappings</p>",
+            unsafe_allow_html=True,
+        )
+        for _co, _gr in sorted(_custom_gr.items()):
+            _c1, _c2 = st.columns([5, 1])
+            with _c1:
+                st.markdown(
+                    f"<span style='font-family:IBM Plex Mono,monospace; font-size:10px;"
+                    f" color:#ccc;'>{_co}</span>"
+                    f"<span style='font-family:IBM Plex Mono,monospace; font-size:10px;"
+                    f" color:#f97316; margin-left:6px;'>{_gr}</span>",
+                    unsafe_allow_html=True,
+                )
+            with _c2:
+                if st.button("✕", key=f"del_gr_{_co}", help=f"Remove {_co}"):
+                    del _custom_gr[_co]
+                    save_custom_gr(_custom_gr)
+                    st.rerun()
+    else:
+        st.caption("No custom mappings yet. The built-in table covers ~400 companies.")
+
 # ── STEP 1 ──────────────────────────────────────────────────────────────
 
 step1_done = st.session_state.step >= 2
@@ -2355,6 +2433,34 @@ else:
 
             if coverage_pct < 80:
                 st.markdown(f"<p style='color:#eab308; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:4px;'>⚠️ {100 - coverage_pct}% of residents missing a filter size — follow up before shipping.</p>", unsafe_allow_html=True)
+                # Email generator — only shown when there are missing filter sizes
+                _missing_filter_rows = [
+                    r for r in all_rows
+                    if not r.get('Custom Field 1', '').strip()
+                    and (r.get('Address', '').strip() or r.get('Recipient Name', '').strip())
+                ]
+                if _missing_filter_rows:
+                    with st.expander(f"📧 Generate follow-up email ({len(_missing_filter_rows)} units)"):
+                        _prop_label = property_name or 'your property'
+                        _unit_lines = '\n'.join(
+                            f"  • {r.get('Recipient Name') or r.get('Address', 'Unknown')} — {r.get('Address', '')}".strip(' —')
+                            for r in _missing_filter_rows
+                        )
+                        _draft = (
+                            f"Hi,\n\n"
+                            f"We're preparing the upcoming filter order for {_prop_label} but "
+                            f"are missing filter sizes for the following units. Could you please "
+                            f"reply with the correct filter dimensions for each?\n\n"
+                            f"{_unit_lines}\n\n"
+                            f"Filter dimensions should be in Length \u00d7 Width \u00d7 Depth "
+                            f"format (e.g. 16 \u00d7 25 \u00d7 1).\n\nThank you!"
+                        )
+                        st.text_area(
+                            "Copy and send to property manager:",
+                            value=_draft,
+                            height=260,
+                            key="follow_up_email_draft",
+                        )
             missing_emails = [r for r in all_rows if not r.get('Tenant Email','').strip()]
             if missing_emails:
                 st.markdown(f"<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:2px;'>ℹ️ {len(missing_emails)} rows missing email — will still be included.</p>", unsafe_allow_html=True)
@@ -2527,7 +2633,17 @@ if st.session_state.step >= 2:
 
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+                        _skip2_ok = st.checkbox(
+                            "I've verified enrollment — skip charge validation",
+                            key="skip_s2_confirmed",
+                        )
+                        st.download_button(
+                            "⬇️ Skip & Download",
+                            data=csv_bytes,
+                            file_name=filename,
+                            mime="text/csv",
+                            disabled=not _skip2_ok,
+                        )
                     with col2:
                         if st.button("Validate Charges →"):
                             st.session_state.validated_rows = new_rows
@@ -2653,8 +2769,22 @@ if st.session_state.step >= 3:
                 st.error(f"Error reading charge detail: {e}")
 
         else:
-            st.markdown("<p style='color:#555; font-size:13px;'>No charge detail uploaded yet.</p>", unsafe_allow_html=True)
-            st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+            st.markdown(
+                "<p style='color:#555; font-size:13px;'>No charge detail uploaded yet. "
+                "Skipping this step means unverified tenants may receive filters.</p>",
+                unsafe_allow_html=True,
+            )
+            _skip3_ok = st.checkbox(
+                "I've verified enrollment by other means — skip charge validation",
+                key="skip_charge_confirmed",
+            )
+            st.download_button(
+                "⬇️ Skip & Download",
+                data=csv_bytes,
+                file_name=filename,
+                mime="text/csv",
+                disabled=not _skip3_ok,
+            )
 
 # ── SUMMARY ─────────────────────────────────────────────────────────────
 

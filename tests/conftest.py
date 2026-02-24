@@ -63,6 +63,10 @@ def _sized_list(arg):
 st_mock.tabs = _sized_list
 st_mock.columns = _sized_list
 
+# Form submit buttons must return False so module-level form submission code
+# doesn't execute during test imports (MagicMock is truthy by default).
+st_mock.form_submit_button = MagicMock(return_value=False)
+
 sys.modules['streamlit'] = st_mock
 sys.modules['streamlit.components'] = components_mock
 sys.modules['streamlit.components.v1'] = components_v1
