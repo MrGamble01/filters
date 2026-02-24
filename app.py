@@ -1350,20 +1350,21 @@ def parse_beagle_xlsx(file, property_name):
     if missing_cols:
         raise ValueError(f"Could not find required columns: {', '.join(missing_cols)}. Headers found: {[h for h in headers if h]}")
 
+    def _cell(row, col):
+        return str(row[col]).strip() if (col is not None and row[col] is not None) else ''
+
     output_rows = []
     for row in rows[1:]:
         if not any(row):
             continue
-        def _cell(col):
-            return str(row[col]).strip() if (col is not None and row[col] is not None) else ''
-        first = _cell(first_name_col)
-        last = _cell(last_name_col)
+        first = _cell(row, first_name_col)
+        last = _cell(row, last_name_col)
         name = f'{first} {last}'.strip()
-        email = _cell(email_col)
+        email = _cell(row, email_col)
         address = merge_address(row[street_col] if street_col is not None else '', row[unit_col] if unit_col is not None else '')
-        city = _cell(city_col)
-        state = _cell(state_col)
-        zipcode = normalize_zip(_cell(zip_col))
+        city = _cell(row, city_col)
+        state = _cell(row, state_col)
+        zipcode = normalize_zip(_cell(row, zip_col))
 
         filter_sizes = []
         for i, fs_col in enumerate(filter_size_cols):
@@ -1898,7 +1899,7 @@ def detect_csv_format(file):
         return 'tenant_dir_v2'
     if 'property address' in header and 'pm company' in header:
         return 'issues_csv'
-    return 'issues_csv'  # fallback
+    return None  # unrecognized format
 
 
 def get_row_issues(row, dupe_indices):
@@ -2268,6 +2269,9 @@ else:
                     file_prop = file_property_map.get(f.name, property_name)
                     if f.name.lower().endswith('.csv'):
                         csv_fmt = detect_csv_format(f)
+                        if csv_fmt is None:
+                            errors.append((f.name, "Unrecognized CSV format — expected a Beagle export, tenant directory, or issues CSV"))
+                            continue
                         if csv_fmt == 'tenant_dir_v1':
                             rows = parse_tenant_directory_v1(f, property_override=file_prop if file_prop else None)
                             fmt_label = "tenant directory (full)"
