@@ -2285,6 +2285,7 @@ else:
 
             # Split complete vs incomplete
             complete_rows, incomplete_rows = split_complete_incomplete(all_rows)
+            ready_rows = complete_rows
 
             total_rows = len(all_rows)
             rows_with_filter = sum(1 for r in complete_rows if r.get('Custom Field 1','').strip())
@@ -2389,9 +2390,6 @@ else:
             existing_keys = {(r['Recipient Name'], r['Address']) for r in st.session_state.master_rows}
             new_to_master = [r for r in ready_rows if (r['Recipient Name'], r['Address']) not in existing_keys]
             st.session_state.master_rows.extend(new_to_master)
-
-            # Use only complete rows going forward
-            ready_rows = complete_rows
 
             btn_cols = st.columns(4) if incomplete_rows else st.columns(3)
             with btn_cols[0]:
