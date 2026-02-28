@@ -2470,7 +2470,8 @@ if st.session_state.step >= 2:
                 elif recent_file:
                     st.error("⚠️ Please upload a CSV or xlsx file exported from ShipStation.")
                     run_validation = False
-                new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
+                if run_validation:
+                    new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
             if run_validation:
                 mode_note = " (baseline only)" if st.session_state.get("baseline_only_mode") else ""
@@ -2748,7 +2749,7 @@ if st.session_state.show_game:
         "ctx.shadowColor='#f97316';ctx.shadowBlur=10;"
         "ctx.fillStyle='#f97316';"
         "ctx.fillRect(-10,-3,20,6);"
-        "[[−10,0],[10,0]].forEach(function(p){ctx.beginPath();ctx.arc(p[0],p[1],6,0,Math.PI*2);ctx.fill();});"
+        "[[-10,0],[10,0]].forEach(function(p){ctx.beginPath();ctx.arc(p[0],p[1],6,0,Math.PI*2);ctx.fill();});"
         "ctx.shadowBlur=0;"
         "ctx.restore();"
         "}"
