@@ -455,30 +455,34 @@ def normalize_address_key(addr):
     if not addr:
         return ''
     addr = str(addr).lower().strip()
-    # Standardize unit designators
-    addr = re.sub(r'apartment', 'apt', addr)
-    addr = re.sub(r'unit', 'apt', addr)
-    addr = re.sub(r'suite', 'apt', addr)
-    addr = re.sub(r'ste', 'apt', addr)
-    addr = re.sub(r'no\.?', 'apt', addr)
+    # Standardize directional abbreviations FIRST (before unit substitutions corrupt them)
+    addr = re.sub(r'\bnortheast\b', 'ne', addr)
+    addr = re.sub(r'\bnorthwest\b', 'nw', addr)
+    addr = re.sub(r'\bsoutheast\b', 'se', addr)
+    addr = re.sub(r'\bsouthwest\b', 'sw', addr)
+    addr = re.sub(r'\bnorth\b', 'n', addr)
+    addr = re.sub(r'\bsouth\b', 's', addr)
+    addr = re.sub(r'\beast\b', 'e', addr)
+    addr = re.sub(r'\bwest\b', 'w', addr)
+    addr = re.sub(r'\bstreet\b', 'st', addr)
+    addr = re.sub(r'\bavenue\b', 'ave', addr)
+    addr = re.sub(r'\bdrive\b', 'dr', addr)
+    addr = re.sub(r'\bboulevard\b', 'blvd', addr)
+    addr = re.sub(r'\broad\b', 'rd', addr)
+    addr = re.sub(r'\bcourt\b', 'ct', addr)
+    addr = re.sub(r'\blane\b', 'ln', addr)
+    addr = re.sub(r'\bcircle\b', 'cir', addr)
+    # Standardize unit designators (word boundaries prevent false matches inside words)
+    addr = re.sub(r'\bapartment\b', 'apt', addr)
+    addr = re.sub(r'\bunit\b', 'apt', addr)
+    addr = re.sub(r'\bsuite\b', 'apt', addr)
+    addr = re.sub(r'\bste\b', 'apt', addr)
+    addr = re.sub(r'\bno\.?(?!\w)', 'apt', addr)
     addr = re.sub(r'#\s*', 'apt ', addr)
     # Remove punctuation except spaces
     addr = re.sub(r'[^\w\s]', '', addr)
     # Collapse whitespace
     addr = re.sub(r'\s+', ' ', addr).strip()
-    # Standardize directional abbreviations
-    addr = re.sub(r'north', 'n', addr)
-    addr = re.sub(r'south', 's', addr)
-    addr = re.sub(r'east', 'e', addr)
-    addr = re.sub(r'west', 'w', addr)
-    addr = re.sub(r'street', 'st', addr)
-    addr = re.sub(r'avenue', 'ave', addr)
-    addr = re.sub(r'drive', 'dr', addr)
-    addr = re.sub(r'boulevard', 'blvd', addr)
-    addr = re.sub(r'road', 'rd', addr)
-    addr = re.sub(r'court', 'ct', addr)
-    addr = re.sub(r'lane', 'ln', addr)
-    addr = re.sub(r'circle', 'cir', addr)
     return addr
 
 def extract_property_from_filename(filename):
@@ -1335,6 +1339,10 @@ def parse_beagle_xlsx(file, property_name):
     filter_size_aliases = COLUMN_ALIASES['Filter Size']
     qty_aliases = COLUMN_ALIASES['Quantity']
     filter_size_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() in filter_size_aliases]
+    if not filter_size_cols:
+        # Fallback: any column containing 'filter' (catches 'Air Filter', 'Filter Size (Response)', etc.)
+        filter_size_cols = [i for i, h in enumerate(headers) if h and 'filter' in str(h).strip().lower()
+                            and not any(x in str(h).strip().lower() for x in ['qty', 'quantity', 'count', 'number'])]
     qty_cols = [i for i, h in enumerate(headers) if h and str(h).strip().lower() in qty_aliases]
     
     # Warn if critical columns missing
