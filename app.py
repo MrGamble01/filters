@@ -2157,8 +2157,8 @@ if st.session_state.step >= 2:
             """, unsafe_allow_html=True)
         with col_c:
             if st.button("← Edit Step 2", key="back2"):
-                # Go back but keep all data intact
                 st.session_state.step = 2
+                st.session_state.step2_run = False
                 st.rerun()
     else:
         st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
@@ -2166,53 +2166,62 @@ if st.session_state.step >= 2:
         st.markdown("<p style='color:#444; font-family:IBM Plex Mono,monospace; font-size:12px; margin-top:-4px; margin-bottom:16px;'>Anyone shipped in the last 90 days is automatically excluded.</p>", unsafe_allow_html=True)
         st.markdown("<p style='color:#22c55e; font-family:IBM Plex Mono,monospace; font-size:11px; margin-bottom:12px;'>✓ ShipStation shipments older than 2/22/26 loaded automatically.</p>", unsafe_allow_html=True)
 
-        recent_file = st.file_uploader("Upload Recent Shipments", type=["csv", "xlsx"], key="recent")
+        recent_file = st.file_uploader("Upload Recent Shipments (optional)", type=["csv", "xlsx"], key="recent")
 
-        if recent_file:
+        run_validation = st.session_state.get('step2_run', False)
+
+        col_run1, col_run2 = st.columns(2)
+        with col_run1:
+            if st.button("Run with baseline only →", key="baseline_only"):
+                st.session_state.step2_run = True
+                run_validation = True
+        with col_run2:
+            if recent_file and st.button("Run with uploaded file →", key="run_with_file"):
+                st.session_state.step2_run = True
+                run_validation = True
+
+        if run_validation:
             with st.spinner("Comparing against shipment history..."):
-                # Validate file type
-                if not recent_file.name.lower().endswith(('.csv', '.xlsx')):
-                    st.error("⚠️ Please upload a CSV or xlsx file exported from ShipStation.")
-                else:
-                    shipped = get_baseline_addresses()
+                shipped = get_baseline_addresses()
+                if recent_file and recent_file.name.lower().endswith(('.csv', '.xlsx')):
                     shipped |= get_shipped_addresses(recent_file)
-                    new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
+                new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
-            if recent_file.name.lower().endswith(('.csv', '.xlsx')):
-                st.markdown("<hr>", unsafe_allow_html=True)
-                cols = st.columns(3)
-                with cols[0]:
-                    st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
-                with cols[1]:
-                    st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
-                with cols[2]:
-                    st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
+            cols = st.columns(3)
+            with cols[0]:
+                st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.normalized_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
+            with cols[1]:
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(new_rows)}</div><div class="stat-label">To Ship</div></div>', unsafe_allow_html=True)
+            with cols[2]:
+                st.markdown(f'<div class="stat"><div class="stat-num" style="color:#ef4444">{len(excluded)}</div><div class="stat-label">Excluded</div></div>', unsafe_allow_html=True)
 
-                if excluded:
-                    with st.expander(f"See {len(excluded)} excluded addresses"):
-                        for row in excluded:
-                            st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
+            if excluded:
+                with st.expander(f"See {len(excluded)} excluded addresses"):
+                    for row in excluded:
+                        st.markdown(f'<div class="excluded-row">🚫 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
 
-                if new_rows:
-                    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-                    csv_bytes = rows_to_csv_bytes(new_rows)
-                    filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
+            if new_rows:
+                st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+                csv_bytes = rows_to_csv_bytes(new_rows)
+                filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
 
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
-                    with col2:
-                        if st.button("Validate Charges →"):
-                            st.session_state.validated_rows = new_rows
-                            st.session_state.step2_stats = {
-                                'total': len(st.session_state.normalized_rows),
-                                'new': len(new_rows),
-                                'excluded': len(excluded),
-                            }
-                            st.session_state.step = 3
-                            st.rerun()
-                else:
-                    st.warning("All addresses were excluded — nothing new to ship.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button("⬇️ Skip & Download", data=csv_bytes, file_name=filename, mime="text/csv")
+                with col2:
+                    if st.button("Validate Charges →"):
+                        st.session_state.validated_rows = new_rows
+                        st.session_state.step2_stats = {
+                            'total': len(st.session_state.normalized_rows),
+                            'new': len(new_rows),
+                            'excluded': len(excluded),
+                        }
+                        st.session_state.step2_run = False
+                        st.session_state.step = 3
+                        st.rerun()
+            else:
+                st.warning("All addresses were excluded — nothing new to ship.")
 
 # ── STEP 3 ──────────────────────────────────────────────────────────────
 
