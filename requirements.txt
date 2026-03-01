@@ -1,5 +1,3 @@
 streamlit
 openpyxl
 pandas
-anthropic
-Pillow
