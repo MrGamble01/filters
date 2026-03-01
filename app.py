@@ -2285,6 +2285,7 @@ else:
 
             # Split complete vs incomplete
             complete_rows, incomplete_rows = split_complete_incomplete(all_rows)
+            ready_rows = complete_rows
 
             total_rows = len(all_rows)
             rows_with_filter = sum(1 for r in complete_rows if r.get('Custom Field 1','').strip())
