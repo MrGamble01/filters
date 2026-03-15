@@ -587,3 +587,66 @@ class TestParseEmailWithClaude:
         assert 'signature' in src.lower() or 'company' in src.lower(), (
             "Prompt must instruct Claude to skip sender company/signature addresses"
         )
+
+
+# ── extract_addresses_from_df (empty-file guard) ──────────────────────────────
+
+class TestExtractAddressesFromDf:
+    def test_empty_dataframe_returns_empty_set(self):
+        import pandas as pd
+        df = pd.DataFrame()
+        result = app.extract_addresses_from_df(df)
+        assert result == set()
+
+    def test_dataframe_with_no_columns_returns_empty_set(self):
+        import pandas as pd
+        df = pd.DataFrame(columns=[])
+        result = app.extract_addresses_from_df(df)
+        assert result == set()
+
+
+# ── append_to_baseline (newline guard) ───────────────────────────────────────
+
+class TestAppendToBaselineNewline:
+    _HEADER = (
+        'Carrier - Name,Service - Confirmation Type,Ship To - Name,'
+        'Shipment - Tracking Number,Ship To - Address 1,Ship To - City,'
+        'Ship To - Country,Ship To - Postal Code,Custom - Field 1,'
+        'Custom - Field 2,Customer - Email,Custom - Field 3'
+    )
+
+    def test_appends_cleanly_when_file_has_no_trailing_newline(self, tmp_path, monkeypatch):
+        import csv
+        p = tmp_path / 'baseline_shipments.csv'
+        # Write header without trailing newline
+        p.write_text(self._HEADER, encoding='utf-8')
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+
+        app.append_to_baseline([{
+            'Recipient Name': 'Test User', 'Address': '1 A St',
+            'City': 'Richmond', 'Postal Code': '23220', 'Country Code': 'US',
+            'Custom Field 1': '16x20x1', 'Custom Field 2': 'Co',
+            'Custom Field 3': 'GR0001', 'Tenant Email': '',
+        }])
+
+        with open(p, newline='', encoding='utf-8') as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 1
+        assert rows[0]['Ship To - Name'] == 'Test User'
+
+    def test_appends_cleanly_when_file_already_has_trailing_newline(self, tmp_path, monkeypatch):
+        import csv
+        p = tmp_path / 'baseline_shipments.csv'
+        p.write_text(self._HEADER + '\n', encoding='utf-8')
+        monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
+
+        app.append_to_baseline([{
+            'Recipient Name': 'Jane', 'Address': '2 B Rd',
+            'City': 'Richmond', 'Postal Code': '23221', 'Country Code': 'US',
+            'Custom Field 1': '', 'Custom Field 2': '', 'Custom Field 3': '',
+            'Tenant Email': '',
+        }])
+
+        with open(p, newline='', encoding='utf-8') as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 1

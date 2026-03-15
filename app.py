@@ -1405,7 +1405,7 @@ def parse_beagle_xlsx(file, property_name):
         last = _cell(row, last_name_col)
         name = f'{first} {last}'.strip()
         email = _cell(row, email_col)
-        address = merge_address(row[street_col] if street_col is not None else '', row[unit_col] if unit_col is not None else '')
+        address = merge_address(_cell(row, street_col), _cell(row, unit_col))
         city = _cell(row, city_col)
         state = _cell(row, state_col)
         zipcode = normalize_zip(_cell(row, zip_col))
@@ -1965,6 +1965,8 @@ def get_row_issues(row, dupe_indices):
 
 def extract_addresses_from_df(df):
     """Extract normalized addresses from a dataframe."""
+    if df.empty or len(df.columns) == 0:
+        return set()
     preferred = ['Ship To - Address 1', 'Address', 'Ship To Address', 'address', 'Address 1']
     addr_col = None
     for p in preferred:
@@ -2015,6 +2017,14 @@ def append_to_baseline(rows):
         'Ship To - Country', 'Ship To - Postal Code', 'Custom - Field 1',
         'Custom - Field 2', 'Customer - Email', 'Custom - Field 3',
     ]
+    # Ensure the file ends with a newline so the first appended row isn't
+    # merged onto the last existing row if the file was manually edited.
+    if os.path.exists(baseline_path) and os.path.getsize(baseline_path) > 0:
+        with open(baseline_path, 'rb') as _f:
+            _f.seek(-1, 2)
+            if _f.read(1) != b'\n':
+                with open(baseline_path, 'a', encoding='utf-8') as _fa:
+                    _fa.write('\n')
     with open(baseline_path, 'a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=_BASELINE_COLS, extrasaction='ignore')
         for row in rows:
@@ -2060,6 +2070,8 @@ if 'step2_stats' not in st.session_state:
     st.session_state.step2_stats = None
 if 'tutorial_step' not in st.session_state:
     st.session_state.tutorial_step = 0  # 0 = not shown
+if 'baseline_saved' not in st.session_state:
+    st.session_state.baseline_saved = False
 
 
 # --- Header ---
@@ -2738,37 +2750,34 @@ if st.session_state.step >= 3:
                 if candidates and _addr_score(candidates[0]) < 999:
                     addr_col = candidates[0]
 
+                def _fuzzy_match(key, paying_set):
+                    """Token-overlap fallback for address matching.
+
+                    Handles the common case where the charge file has the base address
+                    without a unit number (e.g. '123 Oak Ln') while the order has the
+                    full address ('123 Oak Ln apt 5'). Strategy:
+                      - All digits in the charge record must appear in the order address
+                        (subset, not equality — order may have extra unit #).
+                      - At least 1 meaningful non-numeric word must also overlap.
+                    """
+                    key_nums = set(re.findall(r'\d+', key))
+                    key_words = set(key.split()) - {'apt', 'unit', 'ste', 'suite'}
+                    for candidate in paying_set:
+                        cand_nums = set(re.findall(r'\d+', candidate))
+                        if not cand_nums or not cand_nums.issubset(key_nums):
+                            continue
+                        cand_words = set(candidate.split()) - {'apt', 'unit', 'ste', 'suite'}
+                        # Require ≥2 overlapping non-digit words so that
+                        # '123 Main St' does NOT fuzzy-match '123 Main Ave'
+                        meaningful = (key_words & cand_words) - {w for w in key_words if w.isdigit()}
+                        if len(meaningful) >= 2:
+                            return True
+                    return False
+
                 if addr_col:
                     paying_addresses = set()
                     for val in charge_df[addr_col].dropna():
                         paying_addresses.add(normalize_address_key(val))
-
-                    def _fuzzy_match(key, paying_set):
-                        """Token-overlap fallback for address matching.
-
-                        Handles the common case where the charge file has the base address
-                        without a unit number (e.g. '123 Oak Ln') while the order has the
-                        full address ('123 Oak Ln apt 5'). Strategy:
-                          - All digits in the charge record must appear in the order address
-                            (subset, not equality — order may have extra unit #).
-                          - At least 1 meaningful non-numeric word must also overlap.
-                        """
-                        key_nums = set(re.findall(r'\d+', key))
-                        key_words = set(key.split()) - {'apt', 'unit', 'ste', 'suite'}
-                        for candidate in paying_set:
-                            cand_nums = set(re.findall(r'\d+', candidate))
-                            if not cand_nums or not cand_nums.issubset(key_nums):
-                                continue
-                            cand_words = set(candidate.split()) - {'apt', 'unit', 'ste', 'suite'}
-                            # Exclude pure-digit words from the meaningful overlap check
-                            # Require ≥2 overlapping non-digit words so that
-                            # '123 Main St' does NOT fuzzy-match '123 Main Ave'
-                            # (only 'main' in common — not enough).
-                            meaningful = (key_words & cand_words) - {w for w in key_words if w.isdigit()}
-                            if len(meaningful) >= 2:
-                                return True
-                        return False
-
                     approved = []
                     flagged = []
                     for row in st.session_state.validated_rows:
@@ -2816,6 +2825,8 @@ if st.session_state.step >= 3:
                         key='charge_addr_col_override',
                         label_visibility='collapsed',
                     )
+                    approved = []
+                    flagged = []
                     if _manual_col:
                         addr_col = _manual_col
                         paying_addresses = set()
@@ -2859,6 +2870,7 @@ if st.session_state.step >= 3:
 
             except Exception as e:
                 st.error(f"Error reading charge detail: {e}")
+                st.stop()
 
         else:
             st.markdown(
