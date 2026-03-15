@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import anthropic
 import openpyxl
 import csv
+import os
 import re
 import io
 import pandas as pd
@@ -14,7 +15,7 @@ from PIL import Image
 # To update: export fresh history from ShipStation and replace baseline_shipments.csv.
 def _baseline_snapshot_label():
     """Return a human-readable date derived from baseline_shipments.csv mtime."""
-    import os, datetime
+    import datetime
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
     try:
         return datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime('%b %Y')
@@ -1965,7 +1966,7 @@ def get_row_issues(row, dupe_indices):
 
 def extract_addresses_from_df(df):
     """Extract normalized addresses from a dataframe."""
-    if df.empty or len(df.columns) == 0:
+    if df.empty:
         return set()
     preferred = ['Ship To - Address 1', 'Address', 'Ship To Address', 'address', 'Address 1']
     addr_col = None
@@ -2009,23 +2010,16 @@ def get_shipped_addresses(file):
 
 def append_to_baseline(rows):
     """Append newly-shipped rows to baseline_shipments.csv in ShipStation export format."""
-    import os, csv
     baseline_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
-    _BASELINE_COLS = [
-        'Carrier - Name', 'Service - Confirmation Type', 'Ship To - Name',
-        'Shipment - Tracking Number', 'Ship To - Address 1', 'Ship To - City',
-        'Ship To - Country', 'Ship To - Postal Code', 'Custom - Field 1',
-        'Custom - Field 2', 'Customer - Email', 'Custom - Field 3',
-    ]
-    # Ensure the file ends with a newline so the first appended row isn't
-    # merged onto the last existing row if the file was manually edited.
+    # Check once whether a leading newline is needed (file exists and doesn't end with \n).
+    needs_newline = False
     if os.path.exists(baseline_path) and os.path.getsize(baseline_path) > 0:
         with open(baseline_path, 'rb') as _f:
             _f.seek(-1, 2)
-            if _f.read(1) != b'\n':
-                with open(baseline_path, 'a', encoding='utf-8') as _fa:
-                    _fa.write('\n')
+            needs_newline = _f.read(1) != b'\n'
     with open(baseline_path, 'a', newline='', encoding='utf-8') as f:
+        if needs_newline:
+            f.write('\n')
         writer = csv.DictWriter(f, fieldnames=_BASELINE_COLS, extrasaction='ignore')
         for row in rows:
             writer.writerow({
@@ -2043,6 +2037,37 @@ def append_to_baseline(rows):
                 'Custom - Field 3': row.get('Custom Field 3', ''),
             })
 
+_BASELINE_COLS = [
+    'Carrier - Name', 'Service - Confirmation Type', 'Ship To - Name',
+    'Shipment - Tracking Number', 'Ship To - Address 1', 'Ship To - City',
+    'Ship To - Country', 'Ship To - Postal Code', 'Custom - Field 1',
+    'Custom - Field 2', 'Customer - Email', 'Custom - Field 3',
+]
+
+
+def _fuzzy_match(key, paying_set):
+    """Token-overlap fallback for address matching.
+
+    Handles the common case where the charge file has the base address
+    without a unit number (e.g. '123 Oak Ln') while the order has the
+    full address ('123 Oak Ln apt 5'). Strategy:
+      - All digits in the charge record must appear in the order address
+        (subset, not equality — order may have extra unit #).
+      - At least 1 meaningful non-numeric word must also overlap.
+    """
+    key_nums = set(re.findall(r'\d+', key))
+    key_words = set(key.split()) - {'apt', 'unit', 'ste', 'suite'}
+    for candidate in paying_set:
+        cand_nums = set(re.findall(r'\d+', candidate))
+        if not cand_nums or not cand_nums.issubset(key_nums):
+            continue
+        cand_words = set(candidate.split()) - {'apt', 'unit', 'ste', 'suite'}
+        meaningful = (key_words & cand_words) - {w for w in key_words if w.isdigit()}
+        if len(meaningful) >= 2:
+            return True
+    return False
+
+
 def validate_rows(normalized_rows, shipped_addresses):
     new_rows = []
     excluded = []
@@ -2053,6 +2078,31 @@ def validate_rows(normalized_rows, shipped_addresses):
         else:
             new_rows.append(row)
     return new_rows, excluded
+
+
+def _display_charge_match_results(approved, flagged, property_name):
+    """Render the stat cards + expanders + download buttons for Step 3 matching."""
+    st.markdown("<hr>", unsafe_allow_html=True)
+    cols = st.columns(3)
+    total = len(approved) + len(flagged)
+    with cols[0]:
+        st.markdown(f'<div class="stat"><div class="stat-num">{total}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
+    with cols[1]:
+        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(approved)}</div><div class="stat-label">Approved</div></div>', unsafe_allow_html=True)
+    with cols[2]:
+        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#eab308">{len(flagged)}</div><div class="stat-label">Flagged</div></div>', unsafe_allow_html=True)
+    slug = property_name.replace(' ', '_')
+    if flagged:
+        with st.expander(f"⚠️ {len(flagged)} addresses flagged for review"):
+            st.markdown("<p style='color:#555; font-size:12px; margin-bottom:10px;'>These addresses were not found in the charge detail report. Verify enrollment before shipping.</p>", unsafe_allow_html=True)
+            for row in flagged:
+                st.markdown(f'<div class="excluded-row">🟡 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
+            st.download_button("⬇️ Download Flagged List", data=rows_to_csv_bytes(flagged), file_name=f"{slug}_flagged.csv", mime="text/csv")
+    if approved:
+        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
+        st.download_button("⬇️ Download Approved CSV", data=rows_to_csv_bytes(approved), file_name=f"{slug}_approved.csv", mime="text/csv")
+    else:
+        st.warning("No approved addresses — check your charge detail report.")
 
 
 # --- Session state ---
@@ -2750,30 +2800,6 @@ if st.session_state.step >= 3:
                 if candidates and _addr_score(candidates[0]) < 999:
                     addr_col = candidates[0]
 
-                def _fuzzy_match(key, paying_set):
-                    """Token-overlap fallback for address matching.
-
-                    Handles the common case where the charge file has the base address
-                    without a unit number (e.g. '123 Oak Ln') while the order has the
-                    full address ('123 Oak Ln apt 5'). Strategy:
-                      - All digits in the charge record must appear in the order address
-                        (subset, not equality — order may have extra unit #).
-                      - At least 1 meaningful non-numeric word must also overlap.
-                    """
-                    key_nums = set(re.findall(r'\d+', key))
-                    key_words = set(key.split()) - {'apt', 'unit', 'ste', 'suite'}
-                    for candidate in paying_set:
-                        cand_nums = set(re.findall(r'\d+', candidate))
-                        if not cand_nums or not cand_nums.issubset(key_nums):
-                            continue
-                        cand_words = set(candidate.split()) - {'apt', 'unit', 'ste', 'suite'}
-                        # Require ≥2 overlapping non-digit words so that
-                        # '123 Main St' does NOT fuzzy-match '123 Main Ave'
-                        meaningful = (key_words & cand_words) - {w for w in key_words if w.isdigit()}
-                        if len(meaningful) >= 2:
-                            return True
-                    return False
-
                 if addr_col:
                     paying_addresses = set()
                     for val in charge_df[addr_col].dropna():
@@ -2787,31 +2813,7 @@ if st.session_state.step >= 3:
                         else:
                             flagged.append(row)
 
-                    st.markdown("<hr>", unsafe_allow_html=True)
-                    cols = st.columns(3)
-                    with cols[0]:
-                        st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.validated_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
-                    with cols[1]:
-                        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(approved)}</div><div class="stat-label">Approved</div></div>', unsafe_allow_html=True)
-                    with cols[2]:
-                        st.markdown(f'<div class="stat"><div class="stat-num" style="color:#eab308">{len(flagged)}</div><div class="stat-label">Flagged</div></div>', unsafe_allow_html=True)
-
-                    if flagged:
-                        with st.expander(f"⚠️ {len(flagged)} addresses flagged for review"):
-                            st.markdown("<p style='color:#555; font-size:12px; margin-bottom:10px;'>These addresses were not found in the charge detail report. Verify enrollment before shipping.</p>", unsafe_allow_html=True)
-                            for row in flagged:
-                                st.markdown(f'<div class="excluded-row">🟡 {row["Recipient Name"]} — {row["Address"]}, {row["City"]}</div>', unsafe_allow_html=True)
-
-                            # Download flagged list for review
-                            flagged_csv = rows_to_csv_bytes(flagged)
-                            st.download_button("⬇️ Download Flagged List", data=flagged_csv, file_name=f"{st.session_state.property_name.replace(' ', '_')}_flagged.csv", mime="text/csv")
-
-                    if approved:
-                        st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-                        approved_csv = rows_to_csv_bytes(approved)
-                        st.download_button("⬇️ Download Approved CSV", data=approved_csv, file_name=f"{st.session_state.property_name.replace(' ', '_')}_approved.csv", mime="text/csv")
-                    else:
-                        st.warning("No approved addresses — check your charge detail report.")
+                    _display_charge_match_results(approved, flagged, st.session_state.property_name)
                 else:
                     st.markdown(
                         "<p style='font-family:IBM Plex Mono,monospace; font-size:11px; color:#eab308; margin-bottom:4px;'>⚠️ Couldn't auto-detect the address column — select it manually:</p>",
@@ -2832,15 +2834,12 @@ if st.session_state.step >= 3:
                         paying_addresses = set()
                         for val in charge_df[addr_col].dropna():
                             paying_addresses.add(normalize_address_key(val))
-                        approved = []
-                        flagged = []
                         for row in st.session_state.validated_rows:
                             key = normalize_address_key(row['Address'])
                             if key in paying_addresses or _fuzzy_match(key, paying_addresses):
                                 approved.append(row)
                             else:
                                 flagged.append(row)
-                        # Reuse the same display block by falling through via a flag
                         _manual_match_done = True
                     else:
                         _manual_match_done = False
@@ -2850,23 +2849,7 @@ if st.session_state.step >= 3:
                             + (f" (+{len(_col_options)-8} more)" if len(_col_options) > 8 else "")
                         )
                     if _manual_match_done:
-                        st.markdown('<hr>', unsafe_allow_html=True)
-                        _mc = st.columns(3)
-                        with _mc[0]:
-                            st.markdown(f'<div class="stat"><div class="stat-num">{len(st.session_state.validated_rows)}</div><div class="stat-label">Total</div></div>', unsafe_allow_html=True)
-                        with _mc[1]:
-                            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#22c55e">{len(approved)}</div><div class="stat-label">Approved</div></div>', unsafe_allow_html=True)
-                        with _mc[2]:
-                            st.markdown(f'<div class="stat"><div class="stat-num" style="color:#eab308">{len(flagged)}</div><div class="stat-label">Flagged</div></div>', unsafe_allow_html=True)
-                        if flagged:
-                            with st.expander(f'⚠️ {len(flagged)} addresses flagged for review'):
-                                for _row in flagged:
-                                    st.markdown(f'<div class="excluded-row">🟡 {_row["Recipient Name"]} — {_row["Address"]}, {_row["City"]}</div>', unsafe_allow_html=True)
-                                st.download_button('⬇️ Download Flagged List', data=rows_to_csv_bytes(flagged), file_name=f"{st.session_state.property_name.replace(' ', '_')}_flagged.csv", mime='text/csv')
-                        if approved:
-                            st.download_button('⬇️ Download Approved CSV', data=rows_to_csv_bytes(approved), file_name=f"{st.session_state.property_name.replace(' ', '_')}_approved.csv", mime='text/csv')
-                        else:
-                            st.warning('No approved addresses — check your charge detail report.')
+                        _display_charge_match_results(approved, flagged, st.session_state.property_name)
 
             except Exception as e:
                 st.error(f"Error reading charge detail: {e}")

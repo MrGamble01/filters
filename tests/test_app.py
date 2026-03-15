@@ -3,11 +3,13 @@ Unit tests for the pure-Python helper functions in app.py.
 
 Run with:  pytest tests/
 """
+import csv
 import io
 import sys
 import os
 import re
 
+import pandas as pd
 import pytest
 
 # conftest.py stubs heavy deps before this import
@@ -329,9 +331,8 @@ class TestTenantDirV1StatusFilter:
 
 class TestTenantDirV2NameReversal:
     def _make_csv(self, tenant_name):
-        import csv as _csv
         buf = io.StringIO()
-        writer = _csv.writer(buf)
+        writer = csv.writer(buf)
         writer.writerow(["Property", "Unit", "Tenant", "Unit Tags", "Tenant Tags"])
         # Quote address and tenant name properly so commas inside fields don't misalign columns.
         writer.writerow(["CODE - 123 Oak St, Austin, TX 78701", "", tenant_name, "16x20x1", ""])
@@ -409,7 +410,6 @@ class TestAppendToBaseline:
         return p
 
     def test_appends_rows_in_correct_columns(self, tmp_path, monkeypatch):
-        import csv, os
         p = self._make_baseline(tmp_path)
         monkeypatch.chdir(tmp_path)
         monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
@@ -438,7 +438,6 @@ class TestAppendToBaseline:
         assert r['Carrier - Name'] == 'UPS'
 
     def test_defaults_country_to_us_when_missing(self, tmp_path, monkeypatch):
-        import csv
         self._make_baseline(tmp_path)
         monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
         app.append_to_baseline([{'Recipient Name': 'X', 'Address': '1 A St', 'City': 'B',
@@ -593,13 +592,11 @@ class TestParseEmailWithClaude:
 
 class TestExtractAddressesFromDf:
     def test_empty_dataframe_returns_empty_set(self):
-        import pandas as pd
         df = pd.DataFrame()
         result = app.extract_addresses_from_df(df)
         assert result == set()
 
     def test_dataframe_with_no_columns_returns_empty_set(self):
-        import pandas as pd
         df = pd.DataFrame(columns=[])
         result = app.extract_addresses_from_df(df)
         assert result == set()
@@ -616,7 +613,6 @@ class TestAppendToBaselineNewline:
     )
 
     def test_appends_cleanly_when_file_has_no_trailing_newline(self, tmp_path, monkeypatch):
-        import csv
         p = tmp_path / 'baseline_shipments.csv'
         # Write header without trailing newline
         p.write_text(self._HEADER, encoding='utf-8')
@@ -635,7 +631,6 @@ class TestAppendToBaselineNewline:
         assert rows[0]['Ship To - Name'] == 'Test User'
 
     def test_appends_cleanly_when_file_already_has_trailing_newline(self, tmp_path, monkeypatch):
-        import csv
         p = tmp_path / 'baseline_shipments.csv'
         p.write_text(self._HEADER + '\n', encoding='utf-8')
         monkeypatch.setattr(app, '__file__', str(tmp_path / 'app.py'))
