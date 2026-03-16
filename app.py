@@ -2714,7 +2714,6 @@ if st.session_state.step >= 2:
                 new_rows, excluded = validate_rows(st.session_state.normalized_rows, shipped)
 
             if run_validation:
-                mode_note = " (baseline only)" if st.session_state.get("baseline_only_mode") else ""
                 st.markdown("<hr>", unsafe_allow_html=True)
                 cols = st.columns(3)
                 with cols[0]:
@@ -3148,7 +3147,7 @@ with fa_col2:
         st.rerun()
 with fa_col3:
     if st.button("restart", key="start_over"):
-        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows','baseline_saved','charge_addr_col_override','skip_s2_confirmed','skip_charge_confirmed']:
+        for key in ['step','normalized_rows','validated_rows','property_name','step1_stats','step2_stats','master_rows','baseline_saved','charge_addr_col_override','skip_s2_confirmed','skip_charge_confirmed','_pending_email_rows','_pending_email_prop','step2_run','baseline_only_mode']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
