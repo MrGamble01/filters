@@ -1988,7 +1988,6 @@ def extract_addresses_from_df(df):
 
 def get_baseline_addresses():
     """Load baseline shipments from the sidecar CSV next to app.py."""
-    import os
     baseline_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'baseline_shipments.csv')
     if not os.path.exists(baseline_path):
         raise FileNotFoundError(
@@ -2635,7 +2634,7 @@ else:
             btn_cols = st.columns(4) if incomplete_rows else st.columns(3)
             with btn_cols[0]:
                 csv_bytes = rows_to_csv_bytes(ready_rows)
-                filename = f"{property_name.replace(' ', '_')}_normalized.csv"
+                filename = f"{(property_name or 'export').replace(' ', '_')}_normalized.csv"
                 st.download_button(f"⬇️ Download ({len(ready_rows)})", data=csv_bytes, file_name=filename, mime="text/csv")
             with btn_cols[1]:
                 if len(st.session_state.master_rows) > 0:
@@ -2644,7 +2643,7 @@ else:
             if incomplete_rows:
                 with btn_cols[2]:
                     inc_bytes = incomplete_to_csv_bytes(incomplete_rows)
-                    inc_filename = f"{property_name.replace(' ', '_')}_incomplete.csv"
+                    inc_filename = f"{(property_name or 'export').replace(' ', '_')}_incomplete.csv"
                     st.download_button(f"⬇️ Incomplete ({len(incomplete_rows)})", data=inc_bytes, file_name=inc_filename, mime="text/csv", help="Send to AM/PM to fill in missing data")
             with btn_cols[-1]:
                 if st.button("Validate Shipments →"):
@@ -2695,17 +2694,20 @@ if st.session_state.step >= 2:
         recent_file = st.file_uploader("Upload recent ShipStation export (.csv) — optional, only needed for shipments in the last few days", type=["csv", "xlsx"], key="recent")
         st.markdown("<p style='color:#333; font-family:IBM Plex Mono,monospace; font-size:11px; margin-top:-8px; margin-bottom:12px;'>To get this file: ShipStation → Shipments → Export. Skip if you don't have ShipStation access — baseline history still applies.</p>", unsafe_allow_html=True)
 
-        run_validation = recent_file is not None
+        run_validation = recent_file is not None or st.session_state.get('step2_run', False)
         if not run_validation:
             if st.button("Run with baseline only →", key="baseline_only"):
-                run_validation = True
+                st.session_state.step2_run = True
                 st.session_state.baseline_only_mode = True
-            else:
-                st.session_state.baseline_only_mode = False
+                st.rerun()
 
         if run_validation:
             with st.spinner("Comparing against shipment history..."):
-                shipped = get_baseline_addresses()
+                try:
+                    shipped = get_baseline_addresses()
+                except FileNotFoundError as e:
+                    st.error(f"❌ {e}")
+                    st.stop()
                 if recent_file and recent_file.name.lower().endswith(('.csv', '.xlsx')):
                     shipped |= get_shipped_addresses(recent_file)
                 elif recent_file:
@@ -2731,7 +2733,7 @@ if st.session_state.step >= 2:
                 if new_rows:
                     st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
                     csv_bytes = rows_to_csv_bytes(new_rows)
-                    filename = f"{st.session_state.property_name.replace(' ', '_')}_validated.csv"
+                    filename = f"{(st.session_state.property_name or 'export').replace(' ', '_')}_validated.csv"
 
                     col1, col2 = st.columns(2)
                     with col1:
@@ -2755,6 +2757,7 @@ if st.session_state.step >= 2:
                                 'excluded': len(excluded),
                             }
                             st.session_state.step = 3
+                            st.session_state.step2_run = False
                             st.rerun()
                 else:
                     st.warning("All addresses were excluded — nothing new to ship.")
@@ -2771,7 +2774,7 @@ if st.session_state.step >= 3:
     # Always show skip option
     if st.session_state.validated_rows:
         csv_bytes = rows_to_csv_bytes(st.session_state.validated_rows)
-        filename = f"{st.session_state.property_name.replace(' ', '_')}_final.csv"
+        filename = f"{(st.session_state.property_name or 'export').replace(' ', '_')}_final.csv"
         st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
 
         if charge_file:
