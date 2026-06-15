@@ -2,11 +2,11 @@ name: Auto-merge Claude PRs
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 jobs:
   auto-merge:
-    if: startsWith(github.head_ref, 'claude/')
+    if: startsWith(github.head_ref, 'claude/') && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       contents: write
