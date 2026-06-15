@@ -1,54 +1,65 @@
-import { listCompanies } from "@/lib/store/jobStore";
-import { upsertCompanyAction } from "@/lib/actions";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useEffect, useMemo, useState } from "react";
+import { listCompanies, upsertCompany } from "@/lib/clientStore";
+import type { Company } from "@/lib/engine/types";
 
 const LIMIT = 40;
 
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}) {
-  const { q } = await searchParams;
-  const query = (q ?? "").trim().toLowerCase();
-  const all = listCompanies();
-  const matches = query
-    ? all.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query) ||
-          c.gr_code.toLowerCase().includes(query),
-      )
-    : all;
+export default function SettingsPage() {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [query, setQuery] = useState("");
+  const [savedGr, setSavedGr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCompanies(listCompanies());
+  }, []);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return companies;
+    return companies.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.gr_code.toLowerCase().includes(q),
+    );
+  }, [companies, query]);
+
   const shown = matches.slice(0, LIMIT);
+
+  function save(e: React.FormEvent<HTMLFormElement>, company: Company) {
+    e.preventDefault();
+    const data = new FormData(e.currentTarget);
+    const updated: Company = {
+      ...company,
+      name: String(data.get("name") ?? company.name).trim() || company.name,
+      default_filter_size: String(data.get("defaultFilterSize") ?? "").trim() || null,
+      address_quirk: data.get("addressQuirk") === "on" ? "unit_field_is_address" : null,
+    };
+    upsertCompany(updated);
+    setCompanies(listCompanies());
+    setSavedGr(company.gr_code);
+    setTimeout(() => setSavedGr(null), 1500);
+  }
 
   return (
     <main>
       <h1>Settings — Companies</h1>
       <p className="sub">
-        {all.length} companies (GR codes from the legacy lookup). Edit display
-        name, default size, and the unit-field-is-address quirk.
+        {companies.length} companies (GR codes from the legacy lookup). Edit
+        display name, default size, and the unit-field-is-address quirk.
       </p>
 
-      <form method="get" className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel" style={{ marginBottom: 16 }}>
         <label htmlFor="q">Search companies</label>
-        <div className="row">
-          <div style={{ flex: "3 1 320px" }}>
-            <input
-              id="q"
-              name="q"
-              type="search"
-              defaultValue={q ?? ""}
-              placeholder="Name or GR code…"
-            />
-          </div>
-          <div style={{ flex: "0 0 auto" }}>
-            <button type="submit" style={{ marginTop: 0 }}>
-              Search
-            </button>
-          </div>
-        </div>
-      </form>
+        <input
+          id="q"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Name or GR code…"
+        />
+      </div>
 
       <p className="muted">
         Showing {shown.length} of {matches.length} match
@@ -61,19 +72,15 @@ export default async function SettingsPage({
           <thead>
             <tr>
               <th>GR</th>
-              <th>Name</th>
-              <th>Default size</th>
-              <th>Unit=address</th>
-              <th></th>
+              <th>Edit</th>
             </tr>
           </thead>
           <tbody>
             {shown.map((c) => (
               <tr key={c.gr_code}>
                 <td className="mono">{c.gr_code}</td>
-                <td colSpan={4} style={{ paddingTop: 8, paddingBottom: 8 }}>
-                  <form action={upsertCompanyAction} className="inline-form">
-                    <input type="hidden" name="grCode" value={c.gr_code} />
+                <td style={{ paddingTop: 8, paddingBottom: 8 }}>
+                  <form className="inline-form" onSubmit={(e) => save(e, c)}>
                     <input
                       type="text"
                       name="name"
@@ -101,9 +108,7 @@ export default async function SettingsPage({
                       <input
                         type="checkbox"
                         name="addressQuirk"
-                        defaultChecked={
-                          c.address_quirk === "unit_field_is_address"
-                        }
+                        defaultChecked={c.address_quirk === "unit_field_is_address"}
                         style={{ width: "auto" }}
                       />
                       unit=addr
@@ -111,6 +116,9 @@ export default async function SettingsPage({
                     <button type="submit" className="secondary">
                       Save
                     </button>
+                    {savedGr === c.gr_code && (
+                      <span style={{ color: "var(--accent)" }}>✓</span>
+                    )}
                   </form>
                 </td>
               </tr>

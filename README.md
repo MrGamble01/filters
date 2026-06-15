@@ -10,16 +10,18 @@ files. Requirements: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
 
 ## Status
 
-Working end-to-end **UI-first** build: upload a file → process → review SEND /
-FLAGS → download CSVs. Job/history/company state is **in-memory** (resets on
-restart); Supabase persistence + Auth is the next milestone.
+Working end-to-end build: upload a file → process → review SEND / FLAGS →
+download CSVs. Job/history/company state persists **in the browser
+(localStorage, per-device)**, so it runs on serverless/Vercel with no database.
+Shared, multi-device persistence + Auth via Supabase is the next milestone.
 
 | Area | State |
 |---|---|
 | Processing engine (`lib/engine`) | ✅ Sections 6–16 |
 | File ingestion (`lib/ingest`, CSV + XLSX) | ✅ duplicate-header safe |
 | Company data (`lib/seed`) | ✅ 794 companies from the legacy `GR_LOOKUP` |
-| UI: Jobs / New Job / Review (inline flag edit) / History / Settings | ✅ in-memory |
+| UI: Jobs / New Job / Review (inline flag edit) / History / Settings | ✅ client + localStorage |
+| Processing API (`app/api/process`) | ✅ stateless route |
 | Unit + integration tests (`tests/`) | ✅ 46 tests |
 | Supabase persistence + Auth | ⏳ next |
 
@@ -48,9 +50,13 @@ lib/engine/
   output/      ShipStation + Dashboard CSV (Sections 15–16) + render()
   process.ts   ordered pipeline (Section 5)
 lib/ingest/    CSV (papaparse) + XLSX (SheetJS) → RawRow[]
-lib/store/     in-memory jobs/history/companies (Supabase stand-in)
-lib/actions.ts server actions (create job, resolve flag, history, settings)
+lib/clientStore.ts  localStorage jobs/history/companies (Supabase stand-in)
+app/api/process     stateless route: file + options → SEND/FLAGS rows
 ```
+
+The browser POSTs the upload to `/api/process` (heavy parsing runs server-side),
+holds results in localStorage, and resolves flags / generates CSV downloads
+client-side — so the app is fully functional on serverless without a database.
 
 ## Develop
 

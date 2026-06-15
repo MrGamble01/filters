@@ -1,10 +1,21 @@
-import Link from "next/link";
-import { listJobs } from "@/lib/store/jobStore";
+"use client";
 
-export const dynamic = "force-dynamic";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { listJobs, deleteJob, type Job } from "@/lib/clientStore";
 
 export default function JobsPage() {
-  const jobs = listJobs();
+  const [jobs, setJobs] = useState<Job[] | null>(null);
+
+  useEffect(() => {
+    setJobs(listJobs());
+  }, []);
+
+  function remove(id: string) {
+    deleteJob(id);
+    setJobs(listJobs());
+  }
+
   return (
     <main>
       <h1>Jobs</h1>
@@ -13,7 +24,9 @@ export default function JobsPage() {
         <Link href="/new">New job →</Link>
       </p>
 
-      {jobs.length === 0 ? (
+      {jobs === null ? (
+        <p className="muted">Loading…</p>
+      ) : jobs.length === 0 ? (
         <div className="panel">
           <p className="muted" style={{ margin: 0 }}>
             No jobs yet. <Link href="/new">Create one</Link> by uploading a
@@ -47,8 +60,15 @@ export default function JobsPage() {
                   <td className="muted">
                     {new Date(j.createdAt).toLocaleString()}
                   </td>
-                  <td>
-                    <Link href={`/jobs/${j.id}`}>Review →</Link>
+                  <td className="right">
+                    <Link href={`/jobs/${j.id}`}>Review</Link>{" "}
+                    <button
+                      className="ghost"
+                      style={{ padding: "3px 8px", marginLeft: 8 }}
+                      onClick={() => remove(j.id)}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

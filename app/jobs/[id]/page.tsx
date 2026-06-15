@@ -1,28 +1,63 @@
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { getJob, type JobRow } from "@/lib/store/jobStore";
-import { resolveFlagAction } from "@/lib/actions";
+"use client";
 
-export const dynamic = "force-dynamic";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import {
+  downloadCsv,
+  getJob,
+  jobCsvs,
+  resolveFlag,
+  type Job,
+  type JobRow,
+} from "@/lib/clientStore";
 
 function fullAddress(r: JobRow): string {
   return [r.address1, r.address2].filter(Boolean).join(" ");
 }
 
-export default async function ReviewPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
-}) {
-  const { id } = await params;
-  const { tab } = await searchParams;
-  const job = getJob(id);
-  if (!job) notFound();
+export default function ReviewPage() {
+  const params = useParams<{ id: string }>();
+  const [job, setJob] = useState<Job | null | undefined>(undefined);
+  const [tab, setTab] = useState<"send" | "flags">("send");
 
-  const activeTab = tab === "flags" ? "flags" : "send";
+  useEffect(() => {
+    setJob(getJob(params.id) ?? null);
+  }, [params.id]);
+
+  if (job === undefined) return <main><p className="muted">Loading…</p></main>;
+  if (job === null)
+    return (
+      <main>
+        <h1>Job not found</h1>
+        <p className="sub">
+          This job isn’t in this browser. <Link href="/new">Create a new one</Link>.
+        </p>
+      </main>
+    );
+
   const isShip = job.outputType === "shipstation";
+
+  function download(type: "send" | "flags") {
+    const { sendCsv, flagsCsv } = jobCsvs(job!);
+    downloadCsv(
+      `${job!.company.gr_code}_${job!.outputType}_${type}.csv`,
+      type === "flags" ? flagsCsv : sendCsv,
+    );
+  }
+
+  function onResolve(e: React.FormEvent<HTMLFormElement>, rowId: string, force = false) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const data = new FormData(form);
+    const updated = resolveFlag(job!, rowId, {
+      sizes: data.get("sizes") ? String(data.get("sizes")) : undefined,
+      postalCode: data.get("postalCode") ? String(data.get("postalCode")) : undefined,
+      name: data.get("name") ? String(data.get("name")) : undefined,
+      force,
+    });
+    setJob(updated);
+  }
 
   return (
     <main>
@@ -52,33 +87,30 @@ export default async function ReviewPage({
       </div>
 
       <div style={{ margin: "10px 0 4px" }}>
-        <a className="btn" href={`/jobs/${job.id}/download?type=send`}>
-          Download SEND CSV
-        </a>{" "}
-        <a
-          className="btn secondary"
-          href={`/jobs/${job.id}/download?type=flags`}
-        >
+        <button onClick={() => download("send")}>Download SEND CSV</button>{" "}
+        <button className="secondary" onClick={() => download("flags")}>
           Download FLAGS CSV
-        </a>
+        </button>
       </div>
 
       <div className="tabs">
-        <Link
-          href={`/jobs/${job.id}?tab=send`}
-          className={activeTab === "send" ? "active" : ""}
+        <a
+          onClick={() => setTab("send")}
+          className={tab === "send" ? "active" : ""}
+          style={{ cursor: "pointer" }}
         >
           Send ({job.send.length})
-        </Link>
-        <Link
-          href={`/jobs/${job.id}?tab=flags`}
-          className={activeTab === "flags" ? "active" : ""}
+        </a>
+        <a
+          onClick={() => setTab("flags")}
+          className={tab === "flags" ? "active" : ""}
+          style={{ cursor: "pointer" }}
         >
           Flags ({job.flags.length})
-        </Link>
+        </a>
       </div>
 
-      {activeTab === "send" ? (
+      {tab === "send" ? (
         <div className="panel" style={{ padding: 0 }}>
           <table>
             <thead>
@@ -148,42 +180,27 @@ export default async function ReviewPage({
                     ))}
                   </td>
                   <td>
-                    <form action={resolveFlagAction} className="inline-form">
-                      <input type="hidden" name="jobId" value={job.id} />
-                      <input type="hidden" name="rowId" value={r.id} />
-                      {r.flag_reasons.some((x) =>
-                        x.includes("size"),
-                      ) && (
-                        <input
-                          type="text"
-                          name="sizes"
-                          placeholder="e.g. 16x20x1"
-                          aria-label="Sizes"
-                        />
+                    <form
+                      className="inline-form"
+                      onSubmit={(e) => onResolve(e, r.id)}
+                    >
+                      {r.flag_reasons.some((x) => x.includes("size")) && (
+                        <input type="text" name="sizes" placeholder="e.g. 16x20x1" aria-label="Sizes" />
                       )}
                       {r.flag_reasons.includes("ambiguous_zip") && (
-                        <input
-                          type="text"
-                          name="postalCode"
-                          placeholder="ZIP"
-                          aria-label="ZIP"
-                        />
+                        <input type="text" name="postalCode" placeholder="ZIP" aria-label="ZIP" />
                       )}
                       {r.flag_reasons.includes("unparseable_name") && (
-                        <input
-                          type="text"
-                          name="name"
-                          placeholder="Name"
-                          aria-label="Name"
-                        />
+                        <input type="text" name="name" placeholder="Name" aria-label="Name" />
                       )}
                       <button type="submit">Resolve</button>
                       <button
-                        type="submit"
-                        name="force"
-                        value="1"
+                        type="button"
                         className="ghost"
                         title="Clear all flags and move to SEND"
+                        onClick={() =>
+                          setJob(resolveFlag(job!, r.id, { force: true }))
+                        }
                       >
                         Send anyway
                       </button>
