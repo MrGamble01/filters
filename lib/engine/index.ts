@@ -40,3 +40,4 @@ export {
   toDashboardRecord,
 } from "./output/dashboard";
 export { toCsv } from "./output/csv";
+export { renderCsvs, FLAG_REASON_COLUMN } from "./output/render";

@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import { normalizeName } from "../lib/engine/pipeline/name";
 
 describe("name normalization (Section 10)", () => {
-  it("strips parenthetical aliases: 'John Smith (Johnny)' -> 'John Smith'", () => {
-    expect(normalizeName("John Smith (Johnny)", "Acme").name).toBe("John Smith");
+  it("keeps parentheticals: 'KIMBERLY DORN (COOPERMAN)' unchanged", () => {
+    expect(normalizeName("KIMBERLY DORN (COOPERMAN)", "Acme").name).toBe(
+      "KIMBERLY DORN (COOPERMAN)",
+    );
   });
 
-  it("strips double-quoted nicknames: 'Mary \"May\" Lee' -> 'Mary Lee'", () => {
-    expect(normalizeName('Mary "May" Lee', "Acme").name).toBe("Mary Lee");
+  it("keeps quoted segments verbatim", () => {
+    expect(normalizeName('Mary "May" Lee', "Acme").name).toBe('Mary "May" Lee');
   });
 
   it("preserves apostrophes in real names", () => {

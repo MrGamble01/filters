@@ -5,12 +5,25 @@ import {
 } from "../lib/engine/pipeline/filterSize";
 
 describe("filter-size extraction & normalization (Section 8)", () => {
-  it("strips a quantity prefix: '2 x 25x25x1' -> 25x25x1", () => {
-    expect(extractFilterSizes("2 x 25x25x1").sizes).toEqual(["25x25x1"]);
+  it("quantity prefix repeats the size: '2 x 25x25x1' -> two 25x25x1", () => {
+    expect(extractFilterSizes("2 x 25x25x1").sizes).toEqual([
+      "25x25x1",
+      "25x25x1",
+    ]);
   });
 
-  it("strips a dash quantity prefix: '2-20x20x1' -> 20x20x1", () => {
-    expect(extractFilterSizes("2-20x20x1").sizes).toEqual(["20x20x1"]);
+  it("dash quantity prefix repeats: '2-20x20x1' -> two 20x20x1", () => {
+    expect(extractFilterSizes("2-20x20x1").sizes).toEqual([
+      "20x20x1",
+      "20x20x1",
+    ]);
+  });
+
+  it("does not dedup repeated sizes (quantity preserved)", () => {
+    expect(extractFilterSizes("16x20x1, 16x20x1").sizes).toEqual([
+      "16x20x1",
+      "16x20x1",
+    ]);
   });
 
   it("orders width <= height: '20x16x1' -> 16x20x1", () => {

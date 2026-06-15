@@ -1,9 +1,10 @@
 import type { OutputType, ProcessedRow, ResolvedUnit } from "../types";
 
 /**
- * Multi-size handling (Section 12).
- * - ShipStation: one row per recipient, all sizes consolidated (Custom Field 1).
- * - Dashboard: expand to one row per distinct size.
+ * Multi-size handling (Section 12), reconciled with real output.
+ * - ShipStation: one row per recipient, all sizes consolidated in Custom Field 1
+ *   WITH repeats preserved (quantity matters for what physically ships).
+ * - Dashboard: one row per DISTINCT size (system-of-record carries no quantity).
  */
 export function applyMultiSize(
   units: ResolvedUnit[],
@@ -26,7 +27,7 @@ export function applyMultiSize(
     };
 
     if (outputType === "dashboard" && u.filter_sizes.length > 0) {
-      for (const size of u.filter_sizes) {
+      for (const size of [...new Set(u.filter_sizes)]) {
         rows.push({
           ...base,
           filter_sizes: [size],
@@ -34,7 +35,7 @@ export function applyMultiSize(
         });
       }
     } else {
-      // ShipStation (always one row) or a flagged unit with no parseable size.
+      // ShipStation (always one row, repeats kept) or a flagged unit with no size.
       rows.push({
         ...base,
         filter_sizes: [...u.filter_sizes],

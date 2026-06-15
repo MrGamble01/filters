@@ -28,6 +28,28 @@ function collectTags(row: RawRow, pattern: RegExp | undefined): string {
   return parts.join(", ");
 }
 
+/** Repeat each paired size by its quantity (positional pairing, doc order). */
+function collectQuantifiedTags(
+  row: RawRow,
+  sizePattern: RegExp,
+  quantityPattern: RegExp,
+): string {
+  const keys = Object.keys(row);
+  const sizeKeys = keys.filter((k) => sizePattern.test(k));
+  const qtyKeys = keys.filter((k) => quantityPattern.test(k));
+  const parts: string[] = [];
+  sizeKeys.forEach((sk, i) => {
+    const size = squish(row[sk]);
+    if (!size) return;
+    const qtyRaw = qtyKeys[i] !== undefined ? squish(row[qtyKeys[i]]) : "";
+    let qty = parseInt(qtyRaw, 10);
+    if (!Number.isFinite(qty) || qty < 1) qty = 1;
+    qty = Math.min(qty, 24);
+    for (let n = 0; n < qty; n++) parts.push(size);
+  });
+  return parts.join(", ");
+}
+
 function parsePrimary(value: string): boolean | null {
   const v = squish(value).toLowerCase();
   if (!v) return null;
@@ -53,6 +75,13 @@ export function applyAdapter(
 
     const unitTags =
       findValue(row, config.columns.unit_tags) ||
+      (config.sizeColumnPattern && config.quantityColumnPattern
+        ? collectQuantifiedTags(
+            row,
+            config.sizeColumnPattern,
+            config.quantityColumnPattern,
+          )
+        : "") ||
       collectTags(row, config.tagPattern);
 
     return {

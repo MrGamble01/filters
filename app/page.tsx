@@ -1,39 +1,61 @@
-import { SEED_COMPANIES } from "@/lib/seed/companies";
+import Link from "next/link";
+import { listJobs } from "@/lib/store/jobStore";
 
-const PIPELINE_STAGES = [
-  "Parse (platform adapters)",
-  "Status filter + unit dedup + tenant selection",
-  "Filter-size extraction + normalization",
-  "Address parsing (Address 1 / Address 2)",
-  "Name normalization",
-  "ZIP backfill",
-  "Multi-size handling (consolidate vs expand)",
-  "History dedup (ShipStation only)",
-  "SEND vs FLAGS split",
-  "Generate output CSV",
-];
+export const dynamic = "force-dynamic";
 
-export default function Home() {
+export default function JobsPage() {
+  const jobs = listJobs();
   return (
     <main>
-      <h1>Air Filter Fulfillment Platform</h1>
-      <p style={{ color: "var(--muted)" }}>
-        Scaffold + core processing engine. UI (Jobs, New Job, Review, History,
-        Settings) is the next milestone — see <code>BUILD_SPEC.md</code>.
+      <h1>Jobs</h1>
+      <p className="sub">
+        Process tenant exports into ShipStation imports or dashboard files.{" "}
+        <Link href="/new">New job →</Link>
       </p>
 
-      <h2>Processing pipeline</h2>
-      <ol>
-        {PIPELINE_STAGES.map((s) => (
-          <li key={s}>{s}</li>
-        ))}
-      </ol>
-
-      <h2>Seeded companies</h2>
-      <p style={{ color: "var(--muted)" }}>
-        {SEED_COMPANIES.length} companies loaded (GR codes, aliases, address
-        quirks).
-      </p>
+      {jobs.length === 0 ? (
+        <div className="panel">
+          <p className="muted" style={{ margin: 0 }}>
+            No jobs yet. <Link href="/new">Create one</Link> by uploading a
+            tenant export.
+          </p>
+        </div>
+      ) : (
+        <div className="panel" style={{ padding: 0 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>GR</th>
+                <th>Platform</th>
+                <th>Output</th>
+                <th className="right">Send</th>
+                <th className="right">Flags</th>
+                <th>Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id}>
+                  <td>{j.company.name}</td>
+                  <td className="mono">{j.company.gr_code}</td>
+                  <td>{j.platform}</td>
+                  <td>{j.outputType}</td>
+                  <td className="right">{j.send.length}</td>
+                  <td className="right">{j.flags.length}</td>
+                  <td className="muted">
+                    {new Date(j.createdAt).toLocaleString()}
+                  </td>
+                  <td>
+                    <Link href={`/jobs/${j.id}`}>Review →</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }

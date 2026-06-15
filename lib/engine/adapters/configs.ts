@@ -23,7 +23,8 @@ export const ADAPTER_CONFIGS: Record<string, AdapterConfig> = {
       postal_code: ["Zip Code", "Zip", "Postal Code"],
       property_name: ["Property", "Property Name"],
     },
-    tagPattern: /filter/i,
+    sizeColumnPattern: /filter\s*size/i,
+    quantityColumnPattern: /quantity|qty/i,
     defaultStatus: "Current",
   },
 

@@ -2,82 +2,80 @@
 
 Ingests property-management tenant/lease exports (AppFolio, Rentvine, Buildium,
 RentManager, Beagle), extracts HVAC filter sizes, deduplicates tenants, and
-produces two kinds of output: **ShipStation import CSVs** and **"Update Filter
-Sizes" dashboard files**. Full requirements live in [`BUILD_SPEC.md`](./BUILD_SPEC.md).
+produces **ShipStation import CSVs** and **"Update Filter Sizes" dashboard**
+files. Requirements: [`BUILD_SPEC.md`](./BUILD_SPEC.md).
 
 > Rebuild of the original Streamlit prototype (`app.py`, `parse_beagle_xlsx.py`,
-> kept for reference) onto the spec's recommended Next.js + Supabase + Vercel
-> stack.
+> kept for reference) onto Next.js + Supabase + Vercel.
 
 ## Status
 
-**This pass: scaffold + core processing engine (spec Sections 6–14) with unit
-tests.** The Next.js UI pages, Supabase wiring, and file-upload ingestion are the
-next milestone.
+Working end-to-end **UI-first** build: upload a file → process → review SEND /
+FLAGS → download CSVs. Job/history/company state is **in-memory** (resets on
+restart); Supabase persistence + Auth is the next milestone.
 
 | Area | State |
 |---|---|
-| Next.js (App Router, TS) scaffold | ✅ minimal landing page |
-| Processing engine (`lib/engine`) | ✅ Sections 6–16 implemented |
-| Unit tests (`tests/`) | ✅ 43 tests, all Section 19 cases |
-| Seed data (`lib/seed`) | ✅ companies / GR codes / aliases (Section 18) |
-| Supabase schema (`supabase/`) | ✅ migration + seed SQL written (not applied) |
-| UI: Jobs / New Job / Review / History / Settings | ⏳ not started |
-| File ingestion (papaparse / SheetJS → RawRow) | ⏳ not started |
-| Supabase Auth / persistence | ⏳ not started |
+| Processing engine (`lib/engine`) | ✅ Sections 6–16 |
+| File ingestion (`lib/ingest`, CSV + XLSX) | ✅ duplicate-header safe |
+| Company data (`lib/seed`) | ✅ 794 companies from the legacy `GR_LOOKUP` |
+| UI: Jobs / New Job / Review (inline flag edit) / History / Settings | ✅ in-memory |
+| Unit + integration tests (`tests/`) | ✅ 46 tests |
+| Supabase persistence + Auth | ⏳ next |
+
+## Reconciled with real output
+
+Verified against a real ShipStation-ready file; three spec rules were corrected
+to match production data:
+
+- **Sizes repeat by quantity** (e.g. `14x24x1, 14x24x1`) — not deduped — for
+  ShipStation. Dashboard still expands to distinct sizes.
+- **Company → GR source** is the legacy 794-entry `GR_LOOKUP`, not the spec's
+  26-row table.
+- **Names keep parentheticals** (`KIMBERLY DORN (COOPERMAN)`) rather than
+  stripping them.
 
 ## Engine architecture
 
-The engine is a framework-agnostic TypeScript module (no Next/React imports), so
-it is unit-testable and can run in server actions or route handlers.
+Framework-agnostic TypeScript (no Next/React imports), unit-testable, run from
+server actions.
 
 ```
 lib/engine/
-  adapters/        platform column maps → IntermediateRow (Section 6)
-  pipeline/
-    status.ts      status filter + unit dedup + tenant selection (Section 7)
-    filterSize.ts  size extraction / normalization / validation (Section 8)
-    address.ts     Address 1 / Address 2 + unit-field quirk (Section 9)
-    name.ts        name normalization (Section 10)
-    zip.ts         ZIP backfill (Section 11)
-    multiSize.ts   consolidate (ShipStation) vs expand (Dashboard) (Section 12)
-    historyDedup.ts ShipStation name-only history dedup (Section 13)
-    split.ts       SEND vs FLAGS (Section 14)
-  output/          ShipStation (Section 15) + Dashboard (Section 16) CSV writers
-  process.ts       orchestrates the ordered pipeline (Section 5)
+  adapters/    platform column maps → IntermediateRow (Section 6)
+  pipeline/    status, filterSize, address, name, zip, multiSize,
+               historyDedup, split (Sections 7–14)
+  output/      ShipStation + Dashboard CSV (Sections 15–16) + render()
+  process.ts   ordered pipeline (Section 5)
+lib/ingest/    CSV (papaparse) + XLSX (SheetJS) → RawRow[]
+lib/store/     in-memory jobs/history/companies (Supabase stand-in)
+lib/actions.ts server actions (create job, resolve flag, history, settings)
 ```
-
-`processRaw(rawRows, options)` runs the adapter then the pipeline;
-`processIntermediate(rows, options)` skips the adapter. Both return
-`{ send, flags, sendCsv, flagsCsv }`.
 
 ## Develop
 
 ```bash
 npm install
-npm test          # vitest — 43 tests
-npm run typecheck # tsc --noEmit
-npm run dev       # Next.js dev server
+npm run dev        # http://localhost:3000
+npm test           # vitest — 46 tests
+npm run typecheck
+npm run build
 ```
 
 ## Database
 
-`supabase/migrations/0001_init.sql` and `supabase/seed.sql` define the schema
-(Section 3) and seed data (Section 18). They are **not** applied to a live
-project yet — apply them when provisioning Supabase.
+`supabase/migrations/0001_init.sql` + `supabase/seed.sql` define the schema
+(Section 3). Not yet applied; the live wiring replaces `lib/store` next.
 
-## Decisions & open questions
+## Decisions (spec §20)
 
-Implemented per spec defaults; confirm before the next pass (spec Section 20):
+1. ShipStation Address 2 **appended** to the single `Address` column (matches
+   the real file; toggle in `ShipStationDefaults`).
+2. Carton dims/weight/service blank, exposed as settings.
+3. Unknown lease status → `Past` (routed to review).
+4. Unresolvable ZIP → flagged `ambiguous_zip`.
 
-1. **ShipStation Address 2** — appended to the single `Address` column
-   (`append_address2: true`). Toggle in `ShipStationDefaults`.
-2. **Carton dimensions / weight / service** — left blank, exposed as
-   `ShipStationDefaults` (wire to per-company/global settings later).
-3. **Unknown lease status** — treated as `Past` (routed to review, never
-   silently shipped).
-4. **Unresolvable ZIP** (no known city+state ZIP) — flagged `ambiguous_zip`.
-
-> Note: the legacy Python files and `requirements.txt` remain at the repo root
-> for reference. Vercel should be pointed at the Next.js project; we can move the
-> Python prototype into `legacy/` in a follow-up.
+> Legacy Python files remain at the repo root for reference; point Vercel at the
+> Next.js project. We still need a raw *input* export (Beagle/AppFolio/etc.) to
+> verify the parsing adapters against real data — the sample provided was an
+> output file.

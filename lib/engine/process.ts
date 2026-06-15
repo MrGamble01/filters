@@ -19,19 +19,7 @@ import { backfillZips } from "./pipeline/zip";
 import { applyMultiSize } from "./pipeline/multiSize";
 import { historyDedup } from "./pipeline/historyDedup";
 import { splitSendFlags } from "./pipeline/split";
-import {
-  SHIPSTATION_COLUMNS,
-  shipStationCsv,
-  toShipStationRecord,
-} from "./output/shipstation";
-import {
-  DASHBOARD_COLUMNS,
-  dashboardCsv,
-  toDashboardRecord,
-} from "./output/dashboard";
-import { toCsv } from "./output/csv";
-
-const FLAG_REASON_COLUMN = "Flag Reasons";
+import { renderCsvs } from "./output/render";
 
 /** Enrich one selected/flagged unit through stages 4–6 (size/address/name). */
 function resolveUnit(
@@ -124,27 +112,13 @@ export function processIntermediate(
   const { send, flags } = splitSendFlags(processed);
 
   // Stage 11: generate output CSVs.
-  let sendCsv: string;
-  let flagsCsv: string;
-  if (options.outputType === "shipstation") {
-    sendCsv = shipStationCsv(send, options.company, defaults);
-    flagsCsv = toCsv(
-      [...SHIPSTATION_COLUMNS, FLAG_REASON_COLUMN],
-      flags.map((r) => ({
-        ...toShipStationRecord(r, options.company, defaults),
-        [FLAG_REASON_COLUMN]: r.flag_reasons.join(", "),
-      })),
-    );
-  } else {
-    sendCsv = dashboardCsv(send);
-    flagsCsv = toCsv(
-      [...DASHBOARD_COLUMNS, FLAG_REASON_COLUMN],
-      flags.map((r) => ({
-        ...toDashboardRecord(r),
-        [FLAG_REASON_COLUMN]: r.flag_reasons.join(", "),
-      })),
-    );
-  }
+  const { sendCsv, flagsCsv } = renderCsvs({
+    outputType: options.outputType,
+    send,
+    flags,
+    company: options.company,
+    defaults,
+  });
 
   return { send, flags, sendCsv, flagsCsv };
 }

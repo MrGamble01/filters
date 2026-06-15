@@ -29,10 +29,16 @@ export interface AdapterConfig {
   };
   /**
    * Headers matching this pattern are gathered (in order) into unit_tags. Used
-   * for exports that spread filter sizes across multiple/duplicate columns
-   * (e.g. Beagle "Filter Size" / "Quantity" pairs).
+   * for exports that spread filter sizes across multiple/duplicate columns.
    */
   tagPattern?: RegExp;
+  /**
+   * For exports with paired size/quantity columns (e.g. Beagle "Filter Size" /
+   * "Quantity"), each size is repeated by its paired quantity into unit_tags.
+   * Columns are paired positionally in document order.
+   */
+  sizeColumnPattern?: RegExp;
+  quantityColumnPattern?: RegExp;
   /** Default lease status when the export carries none (e.g. Beagle forms). */
   defaultStatus?: string;
 }

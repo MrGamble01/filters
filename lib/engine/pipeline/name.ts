@@ -1,7 +1,14 @@
 import type { FlagReason } from "../types";
 import { squish } from "../util";
 
-/** Name normalization (Section 10). */
+/**
+ * Name normalization (Section 10), reconciled with real output.
+ *
+ * Parentheticals and quoted segments are KEPT (e.g. "KIMBERLY DORN (COOPERMAN)"
+ * appears verbatim in the ShipStation-ready file — they are real name content,
+ * not nicknames to strip). We still standardize LLC formatting and fall back to
+ * "[Company] Resident" for missing/placeholder names.
+ */
 
 const PLACEHOLDER_NAMES = new Set([
   "",
@@ -18,24 +25,11 @@ const PLACEHOLDER_NAMES = new Set([
   "vacant",
 ]);
 
-/**
- * Normalize a tenant name:
- * - strip parenthetical aliases and double-quoted nicknames
- * - standardize LLC formatting
- * - fall back to "[Company] Resident" for missing/placeholder names
- */
 export function normalizeName(
   raw: string,
   companyName: string,
 ): { name: string; flag?: FlagReason } {
-  let s = raw ?? "";
-
-  // Strip "(Johnny)" and "May" style aliases. Only double quotes (incl. smart
-  // quotes) — never apostrophes, which appear in real names like O'Brien.
-  s = s.replace(/\([^)]*\)/g, " ");
-  s = s.replace(/"[^"]*"/g, " ");
-  s = s.replace(/[“”][^“”]*[“”]/g, " ");
-  s = squish(s);
+  let s = squish(raw);
 
   // LLC: "Acme Holdings, LLC." -> "Acme Holdings LLC"
   if (/\bl\.?\s*l\.?\s*c\b/i.test(s)) {
