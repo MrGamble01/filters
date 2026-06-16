@@ -228,6 +228,39 @@ th {
   border-color: var(--accent);
 }
 
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 56px 24px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--panel);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.dropzone.drag {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+.dropzone .big {
+  font-size: 18px;
+  font-weight: 600;
+}
+.dropzone .hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.bar > div {
+  flex: 0 0 auto;
+}
 .muted {
   color: var(--muted);
 }

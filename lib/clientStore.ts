@@ -77,6 +77,11 @@ export function getHistory(grCode: string): string[] {
   return read<HistoryMap>(HISTORY_KEY, {})[grCode] ?? [];
 }
 
+/** The whole history map (sent to the API so detected companies get deduped). */
+export function getHistoryMap(): HistoryMap {
+  return read<HistoryMap>(HISTORY_KEY, {});
+}
+
 export function appendHistory(grCode: string, names: string[]): number {
   const map = read<HistoryMap>(HISTORY_KEY, {});
   const merged = [
