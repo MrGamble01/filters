@@ -32,18 +32,25 @@ export const ADAPTER_CONFIGS: Record<string, AdapterConfig> = {
     key: "appfolio",
     name: "AppFolio",
     columns: {
-      property_name: ["Property", "Property Name", "Portfolio"],
-      unit: ["Unit", "Unit Name"],
+      // Property Street Address 1 doubles as the dedup property key (Property
+      // Name is often blank in real exports).
+      property_name: ["Property Street Address 1", "Property Name", "Property"],
+      // The unit designator lives in Property Street Address 2 (Unit A, #H88,
+      // or a nickname); the "Unit" column holds the building street address.
+      unit: ["Property Street Address 2"],
       unit_tags: ["Unit Tags", "Tags"],
-      street_address1: ["Address", "Property Address", "Street Address"],
-      tenant_name: ["Tenant", "Tenant Name", "Resident", "Resident Name"],
-      is_primary_tenant: ["Is Primary", "Primary", "Primary Tenant"],
+      street_address1: ["Property Street Address 1", "Address", "Street Address"],
+      // Names come from First/Last columns; "Tenant" is "Last, First".
+      first_name: ["First Name"],
+      last_name: ["Last Name"],
+      tenant_name: ["Tenant Name"],
+      is_primary_tenant: ["Primary Tenant", "Is Primary", "Primary"],
       tenant_type: ["Tenant Type", "Type"],
       lease_status: ["Status", "Lease Status"],
-      city: ["City"],
-      state: ["State"],
-      postal_code: ["Zip", "Zip Code", "Postal Code"],
-      email: ["Email", "Tenant Email"],
+      city: ["Property City", "City"],
+      state: ["Property State", "State"],
+      postal_code: ["Property Zip", "Zip", "Zip Code", "Postal Code"],
+      email: ["Emails", "Email", "Tenant Email"],
     },
   },
 

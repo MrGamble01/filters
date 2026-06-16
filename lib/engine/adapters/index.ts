@@ -50,6 +50,15 @@ function collectQuantifiedTags(
   return parts.join(", ");
 }
 
+/** Some exports pack multiple emails into one cell; ShipStation wants one. */
+function firstEmail(value: string): string {
+  const parts = squish(value)
+    .split(/[,;]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return parts.find((p) => p.includes("@")) ?? parts[0] ?? "";
+}
+
 function parsePrimary(value: string): boolean | null {
   const v = squish(value).toLowerCase();
   if (!v) return null;
@@ -101,7 +110,7 @@ export function applyAdapter(
       city: findValue(row, config.columns.city),
       state: findValue(row, config.columns.state),
       postal_code: findValue(row, config.columns.postal_code),
-      email: findValue(row, config.columns.email),
+      email: firstEmail(findValue(row, config.columns.email)),
       raw: row,
     };
   });
