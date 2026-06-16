@@ -21,7 +21,8 @@ export default function RootLayout({
             Air Filter Fulfillment
           </Link>
           <Link href="/">Format a File</Link>
-          <Link href="/history">History</Link>
+          <Link href="/reports">Reports</Link>
+          <Link href="/history">Shipment History</Link>
           <Link href="/settings">Settings</Link>
         </nav>
         {children}
