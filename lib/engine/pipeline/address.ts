@@ -44,35 +44,19 @@ export function splitAddress(full: string): {
 
 /**
  * Decide whether the `Unit` column should be treated as the mailable address.
- * True when the company has the quirk, or for AppFolio multi-unit complexes
- * (a property with 2+ distinct units in the job).
+ * True only when the company carries the quirk (e.g. Edisto). The earlier
+ * "AppFolio multi-unit" auto-heuristic was removed: real AppFolio exports keep
+ * the street in Property Street Address 1 and the designator in Address 2, so
+ * treating the unit field as the address corrupted multi-unit addresses.
  */
 export function buildUnitFieldIsAddress(
   rows: IntermediateRow[],
   company: Company,
   platform: PlatformKey,
 ): (row: IntermediateRow) => boolean {
-  if (company.address_quirk === "unit_field_is_address") {
-    return () => true;
-  }
-
-  if (platform === "appfolio") {
-    const unitsByProperty = new Map<string, Set<string>>();
-    for (const r of rows) {
-      const prop = squish(r.property_name).toLowerCase();
-      const unit = squish(r.unit).toLowerCase();
-      if (!unit) continue;
-      if (!unitsByProperty.has(prop)) unitsByProperty.set(prop, new Set());
-      unitsByProperty.get(prop)!.add(unit);
-    }
-    const multiUnit = new Set<string>();
-    for (const [prop, units] of unitsByProperty) {
-      if (units.size >= 2) multiUnit.add(prop);
-    }
-    return (row) => multiUnit.has(squish(row.property_name).toLowerCase());
-  }
-
-  return () => false;
+  void rows;
+  void platform;
+  return () => company.address_quirk === "unit_field_is_address";
 }
 
 /** Resolve Address 1 / Address 2 for a single selected row (Section 9). */

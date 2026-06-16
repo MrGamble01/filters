@@ -70,15 +70,15 @@ describe("address handling (Section 9)", () => {
     expect(pred(rows[0])).toBe(true);
   });
 
-  it("AppFolio multi-unit property (2+ units) -> unitFieldIsAddress true", () => {
+  it("non-quirk company never treats the unit field as the address", () => {
     const company: Company = { name: "X", gr_code: "GR0000" };
     const rows = [
       makeRow({ property_name: "Complex A", unit: "101" }),
       makeRow({ property_name: "Complex A", unit: "102" }),
-      makeRow({ property_name: "Single B", unit: "Single B" }),
     ];
+    // The speculative AppFolio multi-unit heuristic was removed; real exports
+    // keep the street in Address 1 and the designator in Address 2.
     const pred = buildUnitFieldIsAddress(rows, company, "appfolio");
-    expect(pred(rows[0])).toBe(true); // Complex A is multi-unit
-    expect(pred(rows[2])).toBe(false); // Single B is one unit
+    expect(pred(rows[0])).toBe(false);
   });
 });
