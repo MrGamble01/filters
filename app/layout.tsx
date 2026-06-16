@@ -20,8 +20,7 @@ export default function RootLayout({
           <Link href="/" className="brand">
             Air Filter Fulfillment
           </Link>
-          <Link href="/">Jobs</Link>
-          <Link href="/new">New Job</Link>
+          <Link href="/">Format a File</Link>
           <Link href="/history">History</Link>
           <Link href="/settings">Settings</Link>
         </nav>
