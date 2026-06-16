@@ -290,7 +290,9 @@ export default function Home() {
 
       {recent.length > 0 && (
         <>
-          <h2>Recent files</h2>
+          <h2>
+            Recent reports <Link href="/reports" style={{ fontSize: 13 }}>See all →</Link>
+          </h2>
           <div className="panel" style={{ padding: 0 }}>
             <table>
               <thead>
