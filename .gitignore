@@ -1,3 +1,21 @@
+# Python (legacy Streamlit app)
 __pycache__/
 *.py[cod]
 *.pyo
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Misc
+.DS_Store
+coverage/

@@ -1,0 +1,5 @@
+# Legacy Streamlit prototype — kept in the repo, excluded from the Vercel build
+# so Vercel doesn't try to build app.py as a Python serverless function.
+app.py
+parse_beagle_xlsx.py
+requirements.txt
