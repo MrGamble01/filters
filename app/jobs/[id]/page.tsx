@@ -7,6 +7,7 @@ import {
   downloadCsv,
   getJob,
   jobCsvs,
+  recordShipment,
   resolveFlag,
   type Job,
   type JobRow,
@@ -44,6 +45,7 @@ export default function ReviewPage() {
       `${job!.company.gr_code}_${job!.outputType}_${type}.csv`,
       type === "flags" ? flagsCsv : sendCsv,
     );
+    if (type === "send") recordShipment(job!);
   }
 
   function onResolve(e: React.FormEvent<HTMLFormElement>, rowId: string, force = false) {
