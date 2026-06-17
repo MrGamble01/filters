@@ -27,7 +27,9 @@ function namesFromCsv(text: string): string[] {
 
 export default function HistoryPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [history, setHistory] = useState<{ grCode: string; count: number }[]>([]);
+  const [history, setHistory] = useState<
+    { grCode: string; batches: number; names: number; lastDate: string | null }[]
+  >([]);
   const [grCode, setGrCode] = useState("");
   const [names, setNames] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -51,10 +53,10 @@ export default function HistoryPage() {
       list = names.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     }
     if (list.length === 0) return setMsg("No names found.");
-    const total = appendHistory(grCode, list);
+    appendHistory(grCode, list, file ? file.name : "pasted");
     setNames("");
     setFile(null);
-    setMsg(`Added ${list.length} names (${total} total for this company).`);
+    setMsg(`Added a batch of ${list.length} names for this company.`);
     refresh();
   }
 
@@ -128,7 +130,9 @@ export default function HistoryPage() {
               <tr>
                 <th>Company</th>
                 <th>GR</th>
-                <th className="right">Names on file</th>
+                <th className="right">Batches</th>
+                <th className="right">Unique names</th>
+                <th>Last shipped</th>
               </tr>
             </thead>
             <tbody>
@@ -136,7 +140,13 @@ export default function HistoryPage() {
                 <tr key={h.grCode}>
                   <td>{getCompany(h.grCode)?.name ?? "—"}</td>
                   <td className="mono">{h.grCode}</td>
-                  <td className="right">{h.count}</td>
+                  <td className="right">{h.batches}</td>
+                  <td className="right">{h.names}</td>
+                  <td className="muted">
+                    {h.lastDate && new Date(h.lastDate).getTime() > 0
+                      ? new Date(h.lastDate).toLocaleDateString()
+                      : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
