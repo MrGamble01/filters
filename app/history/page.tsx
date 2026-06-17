@@ -62,8 +62,10 @@ export default function HistoryPage() {
     <main>
       <h1>Shipment History</h1>
       <p className="sub">
-        Per-company recipient name lists used to dedup ShipStation outputs.
-        Single-filter names matching history are flagged; multi-filter are released.
+        Per-company shipped-name lists used to dedup ShipStation outputs.
+        Single-filter repeats matching history are flagged; multi-filter are
+        released. Downloaded SEND files are recorded here automatically — you can
+        also upload a ShipStation “last shipped” export or a previous SEND file.
       </p>
 
       <form onSubmit={onSubmit} className="panel">
@@ -87,7 +89,9 @@ export default function HistoryPage() {
             </select>
           </div>
           <div>
-            <label htmlFor="file">Upload a CSV of shipped names (optional)</label>
+            <label htmlFor="file">
+              Upload a ShipStation export or a previous SEND file (optional)
+            </label>
             <input
               id="file"
               type="file"
@@ -95,7 +99,7 @@ export default function HistoryPage() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
             <p className="muted" style={{ fontSize: 12 }}>
-              Uses a Recipient Name / Ship To - Name / Name column, else the
+              Reads a Recipient Name / Ship To - Name / Name column, else the
               first column.
             </p>
           </div>

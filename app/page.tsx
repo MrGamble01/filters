@@ -9,6 +9,7 @@ import {
   jobCsvs,
   listCompanies,
   listJobs,
+  recordShipment,
   saveJob,
   uid,
   type Job,
@@ -30,6 +31,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsCompany, setNeedsCompany] = useState(false);
+  const [recorded, setRecorded] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [settings, setSettings] = useState<Settings>({
     grCode: "",
@@ -112,6 +114,7 @@ export default function Home() {
     jobIdRef.current = null;
     setJob(null);
     setNeedsCompany(false);
+    setRecorded(null);
     process(file);
   }
 
@@ -127,6 +130,10 @@ export default function Home() {
       `${job.company.gr_code}_${job.outputType}_${kind}.csv`,
       kind === "flags" ? flagsCsv : sendCsv,
     );
+    if (kind === "send") {
+      const total = recordShipment(job);
+      if (total) setRecorded(`Added ${job.send.length} to shipment history.`);
+    }
   }
 
   const isShip = settings.outputType === "shipstation";
@@ -219,6 +226,12 @@ export default function Home() {
               </Link>
             </div>
           </div>
+
+          {recorded && (
+            <p style={{ color: "var(--accent)", fontSize: 13, marginBottom: 0 }}>
+              ✓ {recorded}
+            </p>
+          )}
 
           <div className="bar" style={{ marginTop: 16 }}>
             <div>

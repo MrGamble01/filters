@@ -6,6 +6,7 @@ import type {
   ProcessedRow,
 } from "./engine/types";
 import { renderCsvs } from "./engine/output/render";
+import { normNameKey } from "./engine/util";
 import { SEED_COMPANIES } from "./seed/companies";
 
 /**
@@ -84,13 +85,30 @@ export function getHistoryMap(): HistoryMap {
 
 export function appendHistory(grCode: string, names: string[]): number {
   const map = read<HistoryMap>(HISTORY_KEY, {});
-  const merged = [
-    ...(map[grCode] ?? []),
-    ...names.map((n) => n.trim()).filter(Boolean),
-  ];
-  map[grCode] = merged;
+  const list = map[grCode] ?? [];
+  const seen = new Set(list.map(normNameKey));
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name) continue;
+    const key = normNameKey(name);
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push(name);
+    }
+  }
+  map[grCode] = list;
   write(HISTORY_KEY, map);
-  return merged.length;
+  return list.length;
+}
+
+/**
+ * Record a downloaded ShipStation report's recipients into that company's
+ * shipment history, so the next report dedups them automatically.
+ */
+export function recordShipment(job: Job): number {
+  if (job.outputType !== "shipstation") return 0;
+  const names = job.send.map((r) => r.recipient_name).filter(Boolean);
+  return appendHistory(job.company.gr_code, names);
 }
 
 export function listHistory(): { grCode: string; count: number }[] {

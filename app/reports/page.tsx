@@ -7,6 +7,7 @@ import {
   downloadCsv,
   jobCsvs,
   listJobs,
+  recordShipment,
   type Job,
 } from "@/lib/clientStore";
 
@@ -28,6 +29,7 @@ export default function ReportsPage() {
       `${job.company.gr_code}_${job.outputType}_${kind}.csv`,
       kind === "flags" ? flagsCsv : sendCsv,
     );
+    if (kind === "send") recordShipment(job);
   }
 
   return (
