@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  buildHistoryByGr,
   buildJob,
+  DEFAULT_DEDUP_KEY,
+  dedupPolicyFromKey,
   downloadCsv,
-  getHistoryMap,
   jobCsvs,
   listCompanies,
   listJobs,
@@ -22,6 +24,7 @@ type Settings = {
   platform: PlatformKey;
   outputType: OutputType;
   autoFill: boolean;
+  dedup: string;
 };
 
 export default function Home() {
@@ -38,6 +41,7 @@ export default function Home() {
     platform: "appfolio",
     outputType: "shipstation",
     autoFill: false,
+    dedup: DEFAULT_DEDUP_KEY,
   });
   const fileRef = useRef<File | null>(null);
   const jobIdRef = useRef<string | null>(null);
@@ -52,11 +56,14 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
+      const s = { ...settings, ...override };
       const fd = new FormData();
       fd.append("file", file);
       fd.append("filename", file.name);
-      fd.append("historyByGr", JSON.stringify(getHistoryMap()));
-      const s = { ...settings, ...override };
+      fd.append(
+        "historyByGr",
+        JSON.stringify(buildHistoryByGr(dedupPolicyFromKey(s.dedup))),
+      );
       if (override?.grCode || settings.grCode) {
         const c = companies.find((x) => x.gr_code === (override?.grCode ?? settings.grCode));
         if (c) fd.append("company", JSON.stringify(c));
@@ -83,6 +90,7 @@ export default function Home() {
         platform: data.detected.platform,
         outputType: s.outputType,
         autoFill: s.autoFill,
+        dedup: s.dedup,
       };
       setSettings(next);
 
@@ -295,6 +303,22 @@ export default function Home() {
                   />
                   default size
                 </label>
+              </div>
+            )}
+            {isShip && (
+              <div>
+                <label>Dedup against</label>
+                <select
+                  value={settings.dedup}
+                  onChange={(e) => rerun({ dedup: e.target.value })}
+                >
+                  <option value="last:1">Last send file</option>
+                  <option value="last:2">Last 2 files</option>
+                  <option value="last:3">Last 3 files</option>
+                  <option value="days:7">Last 7 days</option>
+                  <option value="days:30">Last 30 days</option>
+                  <option value="all">All history</option>
+                </select>
               </div>
             )}
           </div>

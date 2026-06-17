@@ -6,7 +6,6 @@ import type {
   ProcessedRow,
 } from "./engine/types";
 import { renderCsvs } from "./engine/output/render";
-import { normNameKey } from "./engine/util";
 import { SEED_COMPANIES } from "./seed/companies";
 
 /**
@@ -31,7 +30,8 @@ export interface Job {
 }
 
 const JOBS_KEY = "aff.jobs.v1";
-const HISTORY_KEY = "aff.history.v1";
+const HISTORY_KEY = "aff.history.v1"; // legacy flat map (migrated to shipments)
+const SHIPMENTS_KEY = "aff.shipments.v1";
 const OVERRIDES_KEY = "aff.companyOverrides.v1";
 
 function read<T>(key: string, fallback: T): T {
@@ -70,52 +70,156 @@ export function upsertCompany(company: Company): void {
   write(OVERRIDES_KEY, overrides);
 }
 
-// ---- History ------------------------------------------------------------
+// ---- Shipment history (dated batches) -----------------------------------
 
-type HistoryMap = Record<string, string[]>;
-
-export function getHistory(grCode: string): string[] {
-  return read<HistoryMap>(HISTORY_KEY, {})[grCode] ?? [];
+/** One shipment batch — the recipients from a single SEND file or upload. */
+export interface Shipment {
+  id: string;
+  grCode: string;
+  date: string; // ISO
+  source: string; // filename / "pasted" / "legacy"
+  names: string[];
 }
 
-/** The whole history map (sent to the API so detected companies get deduped). */
-export function getHistoryMap(): HistoryMap {
-  return read<HistoryMap>(HISTORY_KEY, {});
+/** Dedup scope. Default is the single most recent batch (last send file). */
+export type DedupPolicy =
+  | { mode: "last"; count: number }
+  | { mode: "days"; days: number }
+  | { mode: "all" };
+
+export const DEFAULT_DEDUP_KEY = "last:1";
+
+export function dedupPolicyFromKey(key: string): DedupPolicy {
+  if (key === "all") return { mode: "all" };
+  const [mode, n] = key.split(":");
+  const value = Number(n) || 1;
+  if (mode === "days") return { mode: "days", days: value };
+  return { mode: "last", count: value };
 }
 
-export function appendHistory(grCode: string, names: string[]): number {
-  const map = read<HistoryMap>(HISTORY_KEY, {});
-  const list = map[grCode] ?? [];
-  const seen = new Set(list.map(normNameKey));
-  for (const raw of names) {
-    const name = raw.trim();
-    if (!name) continue;
-    const key = normNameKey(name);
-    if (!seen.has(key)) {
-      seen.add(key);
-      list.push(name);
-    }
-  }
-  map[grCode] = list;
-  write(HISTORY_KEY, map);
-  return list.length;
+function readShipments(): Shipment[] {
+  const list = read<Shipment[]>(SHIPMENTS_KEY, []);
+  if (list.length > 0) return list;
+  // One-time migration from the old flat per-company name map.
+  const legacy = read<Record<string, string[]>>(HISTORY_KEY, {});
+  const migrated: Shipment[] = Object.entries(legacy)
+    .filter(([, names]) => names.length > 0)
+    .map(([grCode, names]) => ({
+      id: uid("ship"),
+      grCode,
+      date: new Date(0).toISOString(),
+      source: "legacy",
+      names,
+    }));
+  if (migrated.length > 0) write(SHIPMENTS_KEY, migrated);
+  return migrated;
 }
 
-/**
- * Record a downloaded ShipStation report's recipients into that company's
- * shipment history, so the next report dedups them automatically.
- */
+export function addShipment(
+  grCode: string,
+  names: string[],
+  source: string,
+): number {
+  const clean = names.map((n) => n.trim()).filter(Boolean);
+  if (clean.length === 0) return 0;
+  const list = readShipments();
+  list.push({
+    id: uid("ship"),
+    grCode,
+    date: new Date().toISOString(),
+    source,
+    names: clean,
+  });
+  write(SHIPMENTS_KEY, list);
+  return clean.length;
+}
+
+/** Record a downloaded ShipStation report as a new shipment batch. */
 export function recordShipment(job: Job): number {
   if (job.outputType !== "shipstation") return 0;
-  const names = job.send.map((r) => r.recipient_name).filter(Boolean);
-  return appendHistory(job.company.gr_code, names);
+  return addShipment(
+    job.company.gr_code,
+    job.send.map((r) => r.recipient_name),
+    job.sourceFile || "report",
+  );
 }
 
-export function listHistory(): { grCode: string; count: number }[] {
-  const map = read<HistoryMap>(HISTORY_KEY, {});
-  return Object.entries(map)
-    .map(([grCode, names]) => ({ grCode, count: names.length }))
-    .sort((a, b) => b.count - a.count);
+/** Manual add from the Shipment History page (upload / paste). */
+export function appendHistory(
+  grCode: string,
+  names: string[],
+  source = "upload",
+): number {
+  return addShipment(grCode, names, source);
+}
+
+export function listShipments(grCode: string): Shipment[] {
+  return readShipments()
+    .filter((s) => s.grCode === grCode)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Pure: pick the batches a policy keeps (newest first). */
+export function applyDedupPolicy(
+  shipments: Shipment[],
+  policy: DedupPolicy,
+  now: number = Date.now(),
+): Shipment[] {
+  const all = [...shipments].sort((a, b) => b.date.localeCompare(a.date));
+  if (policy.mode === "all") return all;
+  if (policy.mode === "last") return all.slice(0, Math.max(1, policy.count));
+  const cutoff = now - policy.days * 86_400_000;
+  return all.filter((s) => new Date(s.date).getTime() >= cutoff);
+}
+
+/** Pure: union of recipient names across the batches a policy keeps. */
+export function dedupNames(
+  shipments: Shipment[],
+  policy: DedupPolicy,
+  now?: number,
+): string[] {
+  const names = new Set<string>();
+  for (const s of applyDedupPolicy(shipments, policy, now))
+    for (const n of s.names) names.add(n);
+  return [...names];
+}
+
+/** Dedup names per company under a policy (sent to the API). */
+export function buildHistoryByGr(policy: DedupPolicy): Record<string, string[]> {
+  const byGr = new Map<string, Shipment[]>();
+  for (const s of readShipments()) {
+    const arr = byGr.get(s.grCode) ?? [];
+    arr.push(s);
+    byGr.set(s.grCode, arr);
+  }
+  const out: Record<string, string[]> = {};
+  for (const [grCode, list] of byGr) out[grCode] = dedupNames(list, policy);
+  return out;
+}
+
+export function listHistory(): {
+  grCode: string;
+  batches: number;
+  names: number;
+  lastDate: string | null;
+}[] {
+  const byGr = new Map<string, Shipment[]>();
+  for (const s of readShipments()) {
+    const arr = byGr.get(s.grCode) ?? [];
+    arr.push(s);
+    byGr.set(s.grCode, arr);
+  }
+  return [...byGr.entries()]
+    .map(([grCode, list]) => {
+      const names = new Set<string>();
+      for (const s of list) for (const n of s.names) names.add(n);
+      const lastDate = list
+        .map((s) => s.date)
+        .sort()
+        .at(-1) ?? null;
+      return { grCode, batches: list.length, names: names.size, lastDate };
+    })
+    .sort((a, b) => (b.lastDate ?? "").localeCompare(a.lastDate ?? ""));
 }
 
 // ---- Jobs ---------------------------------------------------------------
