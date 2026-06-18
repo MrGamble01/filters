@@ -17,6 +17,7 @@ import {
   type Job,
 } from "@/lib/clientStore";
 import { SEED_PLATFORMS } from "@/lib/seed/companies";
+import { processFileClient } from "@/lib/processClient";
 import type { Company, OutputType, PlatformKey } from "@/lib/engine/types";
 
 type Settings = {
@@ -45,6 +46,7 @@ export default function Home() {
   });
   const fileRef = useRef<File | null>(null);
   const jobIdRef = useRef<string | null>(null);
+  const platformChosenRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,24 +59,23 @@ export default function Home() {
     setError(null);
     try {
       const s = { ...settings, ...override };
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("filename", file.name);
-      fd.append(
-        "historyByGr",
-        JSON.stringify(buildHistoryByGr(dedupPolicyFromKey(s.dedup))),
-      );
-      if (override?.grCode || settings.grCode) {
-        const c = companies.find((x) => x.gr_code === (override?.grCode ?? settings.grCode));
-        if (c) fd.append("company", JSON.stringify(c));
-      }
-      if (override?.platform || s.platform) fd.append("platform", s.platform);
-      fd.append("outputType", s.outputType);
-      fd.append("autoFill", String(s.autoFill));
+      const company =
+        override?.grCode || settings.grCode
+          ? companies.find(
+              (x) => x.gr_code === (override?.grCode ?? settings.grCode),
+            )
+          : undefined;
+      // Let the platform auto-detect until the user picks one explicitly.
+      if (override?.platform !== undefined) platformChosenRef.current = true;
+      const platform = platformChosenRef.current ? s.platform : undefined;
 
-      const res = await fetch("/api/process", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Processing failed.");
+      const data = await processFileClient(file, {
+        company,
+        platform,
+        outputType: s.outputType,
+        autoFill: s.autoFill,
+        historyByGr: buildHistoryByGr(dedupPolicyFromKey(s.dedup)),
+      });
 
       if (data.needsCompany) {
         setNeedsCompany(true);
@@ -84,9 +85,9 @@ export default function Home() {
       }
 
       setNeedsCompany(false);
-      const company: Company = data.detected.company;
+      const detectedCompany = data.detected.company!;
       const next: Settings = {
-        grCode: company.gr_code,
+        grCode: detectedCompany.gr_code,
         platform: data.detected.platform,
         outputType: s.outputType,
         autoFill: s.autoFill,
@@ -95,7 +96,7 @@ export default function Home() {
       setSettings(next);
 
       const built = buildJob({
-        company,
+        company: detectedCompany,
         platform: next.platform,
         outputType: next.outputType,
         autoFill: next.autoFill,
@@ -120,6 +121,7 @@ export default function Home() {
     if (!file) return;
     fileRef.current = file;
     jobIdRef.current = null;
+    platformChosenRef.current = false;
     setJob(null);
     setNeedsCompany(false);
     setRecorded(null);
