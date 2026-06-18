@@ -168,11 +168,33 @@ export default function Home() {
           onFile(e.dataTransfer.files?.[0]);
         }}
       >
+        <div className="ic" aria-hidden>
+          {busy ? (
+            <span className="spinner" />
+          ) : (
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <path d="M12 16V3" />
+              <path d="m7 8 5-5 5 5" />
+            </svg>
+          )}
+        </div>
         <div className="big">
-          {busy ? "Processing…" : "Drop a CSV or XLSX here"}
+          {busy ? "Processing…" : "Drop a tenant export here"}
         </div>
         <div className="hint">
-          {fileRef.current ? fileRef.current.name : "or click to choose a file"}
+          {fileRef.current
+            ? fileRef.current.name
+            : "CSV or XLSX · or click to choose"}
         </div>
         <input
           ref={inputRef}
@@ -236,10 +258,31 @@ export default function Home() {
           </div>
 
           {recorded && (
-            <p style={{ color: "var(--accent)", fontSize: 13, marginBottom: 0 }}>
+            <p
+              style={{ color: "var(--success)", fontSize: 13, marginBottom: 0 }}
+            >
               ✓ {recorded}
             </p>
           )}
+
+          <div className="stats">
+            <div className="stat">
+              <div className="num" style={{ color: "var(--success)" }}>
+                {job.send.length}
+              </div>
+              <div className="lbl">Ready to ship</div>
+            </div>
+            <div className="stat">
+              <div className="num" style={{ color: "var(--warn)" }}>
+                {job.flags.length}
+              </div>
+              <div className="lbl">Flagged</div>
+            </div>
+            <div className="stat">
+              <div className="num">{job.inputRowCount}</div>
+              <div className="lbl">Input rows</div>
+            </div>
+          </div>
 
           <div className="bar" style={{ marginTop: 16 }}>
             <div>
