@@ -19,6 +19,11 @@ export const STATUS_RANK: Record<LeaseStatus, number> = {
 const STATUS_SYNONYMS: Record<string, LeaseStatus> = {
   current: "Current",
   active: "Current",
+  renewing: "Current",
+  holdover: "Current",
+  "month to month": "Current",
+  "month-to-month": "Current",
+  mtm: "Current",
   "on notice": "Notice",
   notice: "Notice",
   evict: "Evict",
