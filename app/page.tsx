@@ -203,7 +203,10 @@ export default function Home() {
           type="file"
           accept=".csv,.xlsx,.xls"
           hidden
-          onChange={(e) => onFile(e.target.files?.[0])}
+          onChange={(e) => {
+            onFile(e.target.files?.[0]);
+            e.target.value = ""; // allow re-selecting the same file
+          }}
         />
       </div>
 

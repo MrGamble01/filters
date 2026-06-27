@@ -11,9 +11,21 @@ import { pushUnique } from "../util";
  */
 
 const FILTER_KEYWORDS = /\b(filter|hvac|air)\b/i;
-const DIM3_SOURCE = "(\\d{1,2})\\s*x\\s*(\\d{1,2})\\s*x\\s*(\\d{1,2})";
-const QTY_PREFIX = /^\s*(\d{1,2})\s*[x-]\s*(?=\d{1,2}\s*x\s*\d{1,2}\s*x\s*\d{1,2})/i;
-const EMBEDDED_QTY = /\b\d{1,2}\s*[x-]\s*(?=\d{1,2}\s*x\s*\d{1,2}\s*x\s*\d{1,2})/gi;
+// A dimension: 1–2 digits with an optional half/decimal (e.g. 15.5), and NOT
+// part of a longer number ("165" must not yield "65"). Decimals matter — HVAC
+// filters come in sizes like 15.5 / 19.5 / 21.5.
+const NUM = "(?<!\\d)\\d{1,2}(?:\\.\\d)?(?!\\d)";
+const DIM3_SOURCE = `(${NUM})\\s*x\\s*(${NUM})\\s*x\\s*(${NUM})`;
+const DIM3_LOOKAHEAD = `${NUM}\\s*x\\s*${NUM}\\s*x\\s*${NUM}`;
+const QTY_PREFIX = new RegExp(
+  `^\\s*(\\d{1,2})\\s*[x-]\\s*(?=${DIM3_LOOKAHEAD})`,
+  "i",
+);
+const EMBEDDED_QTY = new RegExp(
+  `\\b\\d{1,2}\\s*[x-]\\s*(?=${DIM3_LOOKAHEAD})`,
+  "gi",
+);
+const DIM2 = new RegExp(`(${NUM})\\s*x\\s*(${NUM})`, "i");
 
 /** Normalize separators: ×, *, X all become lowercase x. */
 function preclean(s: string): string {
@@ -96,7 +108,7 @@ export function extractFilterSizes(raw: string): {
     }
 
     if (!found3) {
-      const m2 = /(\d{1,2})\s*x\s*(\d{1,2})/i.exec(token);
+      const m2 = new RegExp(DIM2.source, "i").exec(token);
       if (m2 && hasKeyword) {
         const size = normalize2D(+m2[1], +m2[2]);
         for (let i = 0; i < multiplier; i++) sizes.push(size);
