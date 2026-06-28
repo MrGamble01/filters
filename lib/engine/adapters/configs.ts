@@ -51,6 +51,7 @@ export const ADAPTER_CONFIGS: Record<string, AdapterConfig> = {
       state: ["Property State", "State"],
       postal_code: ["Property Zip", "Zip", "Zip Code", "Postal Code"],
       email: ["Emails", "Email", "Tenant Email"],
+      notes: ["Tenant Notes", "Notes"],
     },
   },
 

@@ -8,7 +8,9 @@ import {
   DEFAULT_DEDUP_KEY,
   dedupPolicyFromKey,
   downloadCsv,
+  getSizeMemory,
   jobCsvs,
+  learnSizesFromJob,
   listCompanies,
   listJobs,
   recordShipment,
@@ -75,6 +77,7 @@ export default function Home() {
         outputType: s.outputType,
         autoFill: s.autoFill,
         historyByGr: buildHistoryByGr(dedupPolicyFromKey(s.dedup)),
+        sizeMemory: getSizeMemory(),
       });
 
       if (data.needsCompany) {
@@ -109,6 +112,7 @@ export default function Home() {
       built.id = jobIdRef.current ?? (jobIdRef.current = uid("job"));
       saveJob(built);
       setJob(built);
+      learnSizesFromJob(detectedCompany.gr_code, [...built.send, ...built.flags]);
       setRecent(listJobs().slice(0, 6));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Processing failed.");

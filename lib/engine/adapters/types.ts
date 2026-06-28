@@ -26,6 +26,7 @@ export interface AdapterConfig {
     state?: string[];
     postal_code?: string[];
     email?: string[];
+    notes?: string[];
   };
   /**
    * Headers matching this pattern are gathered (in order) into unit_tags. Used

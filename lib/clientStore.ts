@@ -6,6 +6,7 @@ import type {
   ProcessedRow,
 } from "./engine/types";
 import { renderCsvs } from "./engine/output/render";
+import { makeUnitKey } from "./engine/util";
 import { SEED_COMPANIES } from "./seed/companies";
 
 /**
@@ -33,6 +34,7 @@ const JOBS_KEY = "aff.jobs.v1";
 const HISTORY_KEY = "aff.history.v1"; // legacy flat map (migrated to shipments)
 const SHIPMENTS_KEY = "aff.shipments.v1";
 const OVERRIDES_KEY = "aff.companyOverrides.v1";
+const SIZE_MEMORY_KEY = "aff.sizeMemory.v1";
 
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -290,6 +292,7 @@ export function resolveFlag(
     row.flag_reasons = row.flag_reasons.filter(
       (r) => !SIZE_REASONS.includes(r),
     );
+    rememberUnitSize(job.company.gr_code, row, row.filter_sizes);
   }
   if (edits.postalCode && edits.postalCode.trim()) {
     row.postal_code = edits.postalCode.trim();
@@ -308,6 +311,53 @@ export function resolveFlag(
   }
   saveJob(job);
   return { ...job };
+}
+
+// ---- Size memory (learned per-unit sizes) -------------------------------
+
+type SizeMemory = Record<string, string[]>;
+
+export function getSizeMemory(): SizeMemory {
+  return read<SizeMemory>(SIZE_MEMORY_KEY, {});
+}
+
+export function sizeMemoryCount(): number {
+  return Object.keys(getSizeMemory()).length;
+}
+
+function hasAddress(key: string): boolean {
+  return key.replace(/\|/g, "").trim().length > 0;
+}
+
+/** Remember one unit's sizes (e.g. when a flag is resolved with a size). */
+export function rememberUnitSize(
+  grCode: string,
+  row: { address1: string; address2: string; city: string; state: string },
+  sizes: string[],
+): void {
+  const clean = sizes.map((s) => s.trim()).filter(Boolean);
+  if (clean.length === 0) return;
+  const key = makeUnitKey(grCode, row.address1, row.address2, row.city, row.state);
+  if (!hasAddress(key)) return;
+  const mem = getSizeMemory();
+  mem[key] = clean;
+  write(SIZE_MEMORY_KEY, mem);
+}
+
+/** Learn sizes from every processed row that already has one (latest wins). */
+export function learnSizesFromJob(grCode: string, rows: ProcessedRow[]): void {
+  const perKey = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (r.filter_sizes.length === 0) continue;
+    const key = makeUnitKey(grCode, r.address1, r.address2, r.city, r.state);
+    if (!hasAddress(key)) continue;
+    if (!perKey.has(key)) perKey.set(key, new Set());
+    r.filter_sizes.forEach((s) => perKey.get(key)!.add(s));
+  }
+  if (perKey.size === 0) return;
+  const mem = getSizeMemory();
+  for (const [key, set] of perKey) mem[key] = [...set];
+  write(SIZE_MEMORY_KEY, mem);
 }
 
 // ---- CSV download -------------------------------------------------------

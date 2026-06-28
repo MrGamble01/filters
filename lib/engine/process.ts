@@ -9,7 +9,9 @@ import type {
 import { DEFAULT_SHIPSTATION_DEFAULTS } from "./types";
 import { runAdapter, type RawRow } from "./adapters";
 import { selectUnits } from "./pipeline/status";
-import { resolveUnitSizes } from "./pipeline/filterSize";
+import { extractFilterSizes } from "./pipeline/filterSize";
+import { extractSizesFromNotes } from "./pipeline/notes";
+import { makeUnitKey } from "./util";
 import {
   buildUnitFieldIsAddress,
   resolveAddress,
@@ -29,19 +31,43 @@ function resolveUnit(
   opts: ProcessOptions,
   extraFlags: ResolvedUnit["flag_reasons"],
 ): ResolvedUnit {
-  const { sizes, flags } = resolveUnitSizes(row.unit_tags, {
-    outputType: opts.outputType,
-    autoFillSize: opts.autoFillSize,
-    defaultFilterSize: opts.company.default_filter_size,
-  });
-
   const { address1, address2 } = resolveAddress(row, unitFieldIsAddress);
   const { name, flag: nameFlag } = normalizeName(
     row.tenant_name,
     opts.company.name,
   );
 
-  const flag_reasons = [...extraFlags, ...flags];
+  // Size resolution: tags -> notes -> learned memory -> company default -> flag.
+  const fromTags = extractFilterSizes(row.unit_tags);
+  let sizes = fromTags.sizes;
+  const flag_reasons = [...extraFlags, ...fromTags.flags];
+
+  if (sizes.length === 0 && row.notes) {
+    const fromNotes = extractSizesFromNotes(row.notes);
+    if (fromNotes.sizes.length > 0) sizes = fromNotes.sizes;
+    for (const f of fromNotes.flags)
+      if (!flag_reasons.includes(f)) flag_reasons.push(f);
+  }
+
+  if (sizes.length === 0) {
+    const ship = opts.outputType === "shipstation";
+    const memKey = makeUnitKey(
+      opts.company.gr_code,
+      address1,
+      address2,
+      row.city,
+      row.state,
+    );
+    const remembered = ship ? opts.sizeMemory?.[memKey] : undefined;
+    if (remembered && remembered.length > 0) {
+      sizes = [...remembered]; // previously-confirmed size for this exact unit
+    } else if (ship && opts.autoFillSize && opts.company.default_filter_size) {
+      sizes = [opts.company.default_filter_size];
+    } else if (!flag_reasons.includes("missing_size")) {
+      flag_reasons.push("missing_size");
+    }
+  }
+
   if (nameFlag && !flag_reasons.includes(nameFlag)) flag_reasons.push(nameFlag);
 
   return {

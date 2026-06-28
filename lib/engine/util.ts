@@ -27,6 +27,22 @@ export function cityStateKey(city: string, state: string): string {
   return `${squish(city).toLowerCase()}|${squish(state).toLowerCase()}`;
 }
 
+/**
+ * Stable key identifying a physical mailing destination, used for size-memory
+ * (a unit's filter size is stable across monthly exports).
+ */
+export function makeUnitKey(
+  grCode: string,
+  address1: string,
+  address2: string,
+  city: string,
+  state: string,
+): string {
+  return [grCode, address1, address2, city, state]
+    .map((s) => squish(s).toLowerCase())
+    .join("|");
+}
+
 /** Push a flag reason if not already present. */
 export function addFlag(target: { flag_reasons: FlagReason[] }, reason: FlagReason): void {
   if (!target.flag_reasons.includes(reason)) target.flag_reasons.push(reason);

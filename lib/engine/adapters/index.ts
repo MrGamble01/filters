@@ -111,6 +111,7 @@ export function applyAdapter(
       state: findValue(row, config.columns.state),
       postal_code: findValue(row, config.columns.postal_code),
       email: firstEmail(findValue(row, config.columns.email)),
+      notes: findValue(row, config.columns.notes),
       raw: row,
     };
   });
