@@ -119,6 +119,11 @@ export function extractFilterSizes(raw: string): {
   return { sizes, flags };
 }
 
+/** Public 2D normalizer (used by the notes-based size recovery). */
+export function normalize2DPublic(a: number, b: number): string {
+  return normalize2D(a, b);
+}
+
 /**
  * Resolve the final size list for a unit, applying opt-in auto-fill.
  *

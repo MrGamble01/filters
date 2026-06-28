@@ -55,6 +55,8 @@ export interface IntermediateRow {
   state: string;
   postal_code: string;
   email: string;
+  /** Free-form notes (e.g. AppFolio Tenant Notes) — a fallback size source. */
+  notes?: string;
   /** Original source row(s) for audit. */
   raw?: Record<string, unknown>;
 }
@@ -125,6 +127,11 @@ export interface ProcessOptions {
   autoFillSize?: boolean;
   /** Per-company shipment-history recipient names (Section 13). */
   history?: string[];
+  /**
+   * Learned sizes keyed by makeUnitKey() — previously-confirmed sizes for a
+   * specific unit, used to auto-fill ShipStation when an export omits the size.
+   */
+  sizeMemory?: Record<string, string[]>;
   shipstationDefaults?: Partial<ShipStationDefaults>;
 }
 

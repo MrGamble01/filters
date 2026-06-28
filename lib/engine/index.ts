@@ -1,6 +1,8 @@
 /** Public surface of the processing engine. */
 
 export * from "./types";
+export { makeUnitKey } from "./util";
+export { extractSizesFromNotes } from "./pipeline/notes";
 export { processIntermediate, processRaw } from "./process";
 
 export { runAdapter, applyAdapter, ADAPTER_CONFIGS } from "./adapters";

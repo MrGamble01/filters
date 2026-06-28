@@ -7,6 +7,7 @@ import {
   getCompany,
   listCompanies,
   listHistory,
+  sizeMemoryCount,
 } from "@/lib/clientStore";
 import type { Company } from "@/lib/engine/types";
 
@@ -34,10 +35,12 @@ export default function HistoryPage() {
   const [names, setNames] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [learned, setLearned] = useState(0);
 
   function refresh() {
     setCompanies(listCompanies());
     setHistory(listHistory());
+    setLearned(sizeMemoryCount());
   }
   useEffect(refresh, []);
 
@@ -68,6 +71,10 @@ export default function HistoryPage() {
         Single-filter repeats matching history are flagged; multi-filter are
         released. Downloaded SEND files are recorded here automatically — you can
         also upload a ShipStation “last shipped” export or a previous SEND file.
+      </p>
+      <p className="muted" style={{ marginTop: -6 }}>
+        🧠 {learned} unit size{learned === 1 ? "" : "s"} remembered — auto-filled
+        on future runs when an export omits the size.
       </p>
 
       <form onSubmit={onSubmit} className="panel">

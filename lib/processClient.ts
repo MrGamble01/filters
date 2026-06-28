@@ -29,6 +29,7 @@ export async function processFileClient(
     outputType: OutputType;
     autoFill?: boolean;
     historyByGr?: Record<string, string[]>;
+    sizeMemory?: Record<string, string[]>;
   },
 ): Promise<ProcessFileResult> {
   const rows = await parseUpload(file);
@@ -61,6 +62,7 @@ export async function processFileClient(
     outputType: opts.outputType,
     autoFillSize: autoFill,
     history,
+    sizeMemory: opts.sizeMemory,
   });
 
   return {
